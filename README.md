@@ -27,7 +27,7 @@ git push -u origin main
 
 ### 2. Set Up Your Development Environment
 
-Then, install the environment and the pre-commit hooks with
+Then, install the environment and the prek hooks with
 
 ```bash
 make install
@@ -35,12 +35,12 @@ make install
 
 This will also generate your `uv.lock` file
 
-### 3. Run the pre-commit hooks
+### 3. Run the prek hooks
 
 Initially, the CI/CD pipeline might be failing due to formatting issues. To resolve those run:
 
 ```bash
-uv run pre-commit run -a
+uv run prek run -a
 ```
 
 ### 4. Commit the changes
