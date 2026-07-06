@@ -11,6 +11,10 @@ copyright = 'Maintained by <a href="https://oceanbase.com">oceanbase</a>.'
 nav = [
     { "Home" = "index.md" },
     { "Modules" = "modules.md" },
+    { "RFCs" = [
+        { "Overview" = "rfcs/README.md" },
+        { "RFC Template" = "rfcs/0000_example.md" },
+    ] },
 ]
 
 [project.plugins.mkdocstrings.handlers.python]
