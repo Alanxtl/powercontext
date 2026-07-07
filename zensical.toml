@@ -36,7 +36,7 @@ paths = ["src/powercontext"]
 lang = ["en", "zh"]
 
 [project.theme]
-custom_dir = "overrides"
+custom_dir = "docs/overrides"
 language = "en"
 features = [
     "announce.dismiss",
