@@ -5,10 +5,10 @@
 [![Commit activity](https://img.shields.io/github/commit-activity/m/oceanbase/powercontext)](https://img.shields.io/github/commit-activity/m/oceanbase/powercontext)
 [![License](https://img.shields.io/github/license/oceanbase/powercontext)](https://img.shields.io/github/license/oceanbase/powercontext)
 
-PowerContext turns human-agent work into handoff-ready context.
+PowerContext 将人类与智能体协作过程转化为可交接的上下文。
 
-## Start here
+## 从这里开始
 
-- [Modules](en/modules.md)
-- [RFC process](en/rfcs/README.md)
-- [RFC template](en/rfcs/0000_example.md)
+- [模块](modules.md)
+- [RFC 流程](rfcs/README.md)
+- [RFC 模板](rfcs/0000_example.md)

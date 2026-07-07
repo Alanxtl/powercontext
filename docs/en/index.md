@@ -9,6 +9,6 @@ PowerContext turns human-agent work into handoff-ready context.
 
 ## Start here
 
-- [Modules](en/modules.md)
-- [RFC process](en/rfcs/README.md)
-- [RFC template](en/rfcs/0000_example.md)
+- [Modules](modules.md)
+- [RFC process](rfcs/README.md)
+- [RFC template](rfcs/0000_example.md)
