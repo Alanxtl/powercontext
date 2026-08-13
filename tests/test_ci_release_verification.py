@@ -95,3 +95,21 @@ def test_github_release_requires_published_state_and_expected_assets() -> None:
     metadata["assets"].pop()
     with pytest.raises(github.ReleaseVerificationError, match=r"missing assets: powercontext-1\.2\.3\.tar\.gz"):
         github.validate_release(metadata, "v1.2.3", expected)
+
+
+def test_github_release_allows_prereleases() -> None:
+    metadata = {
+        "tag_name": "v1.2.3-rc.1",
+        "draft": False,
+        "prerelease": True,
+        "assets": [
+            {"name": "powercontext-1.2.3-rc.1-py3-none-any.whl"},
+            {"name": "powercontext-1.2.3-rc.1.tar.gz"},
+        ],
+    }
+
+    assert github.validate_release(
+        metadata,
+        "v1.2.3-rc.1",
+        {"powercontext-1.2.3-rc.1-py3-none-any.whl", "powercontext-1.2.3-rc.1.tar.gz"},
+    )

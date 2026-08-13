@@ -49,9 +49,6 @@ def validate_release(metadata: dict[str, Any], tag: str, expected_assets: set[st
         )
     if metadata.get("draft") is not False:
         raise ReleaseVerificationError(f"GitHub Release {tag} is still a draft")  # noqa: TRY003
-    if metadata.get("prerelease") is not False:
-        raise ReleaseVerificationError(f"GitHub Release {tag} is marked as a prerelease")  # noqa: TRY003
-
     assets = metadata.get("assets")
     if not isinstance(assets, list):
         raise ReleaseVerificationError(f"GitHub Release {tag} returned no asset list")  # noqa: TRY003
