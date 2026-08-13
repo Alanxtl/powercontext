@@ -64,6 +64,8 @@ jobs:
               raise SystemExit("release_tag must use vX.Y.Z or X.Y.Z stable semantic versioning")
 
           package = os.environ["RELEASE_PACKAGE"]
+          if package not in {"auto", "powercontext", "powermem"}:
+              raise SystemExit("release_package must be one of: auto, powercontext, powermem")
           if package == "auto":
               quoted_tag = urllib.parse.quote(tag, safe="")
               request = urllib.request.Request(
