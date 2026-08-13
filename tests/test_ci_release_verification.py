@@ -21,16 +21,18 @@ pypi = _load_script("ci_verify_pypi_release")
 smoke = _load_script("ci_release_smoke")
 
 
-def test_release_smoke_resolves_console_script_from_verification_python(tmp_path, monkeypatch) -> None:
-    scripts = tmp_path / "verification" / ("Scripts" if smoke.os.name == "nt" else "bin")
+@pytest.mark.skipif(smoke.os.name == "nt", reason="POSIX venv symlink regression")
+def test_release_smoke_resolves_console_script_from_verification_python(tmp_path) -> None:
+    scripts = tmp_path / "verification" / "bin"
     scripts.mkdir(parents=True)
-    python = scripts / ("python.exe" if smoke.os.name == "nt" else "python")
-    console_script = scripts / ("powercontext.exe" if smoke.os.name == "nt" else "powercontext")
-    python.touch()
+    base_python = tmp_path / "base-python"
+    base_python.touch()
+    python = scripts / "python"
+    python.symlink_to(base_python)
+    console_script = scripts / "powercontext"
     console_script.touch()
-    monkeypatch.setenv("PATH", str(tmp_path / "ambient-install"))
 
-    assert smoke._console_script(python) == console_script.resolve()
+    assert smoke._console_script(python) == console_script
 
 
 def test_pypi_release_requires_wheel_and_sdist() -> None:

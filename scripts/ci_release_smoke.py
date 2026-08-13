@@ -31,7 +31,7 @@ def _available_port() -> int:
 
 def _console_script(python_executable: str | Path) -> Path:
     name = "powercontext.exe" if os.name == "nt" else "powercontext"
-    executable = Path(python_executable).resolve().with_name(name)
+    executable = Path(python_executable).with_name(name)
     if not executable.is_file():
         raise RuntimeError(  # noqa: TRY003 - diagnostics identify the exact verification environment
             f"The powercontext console script is not installed next to {python_executable}"
