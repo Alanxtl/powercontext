@@ -9,6 +9,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 from importlib.metadata import version
@@ -26,6 +27,16 @@ def _available_port() -> int:
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         return int(listener.getsockname()[1])
+
+
+def _console_script(python_executable: str | Path) -> Path:
+    name = "powercontext.exe" if os.name == "nt" else "powercontext"
+    executable = Path(python_executable).resolve().with_name(name)
+    if not executable.is_file():
+        raise RuntimeError(  # noqa: TRY003 - diagnostics identify the exact verification environment
+            f"The powercontext console script is not installed next to {python_executable}"
+        )
+    return executable
 
 
 def _wait_until_ready(base_url: str, process: subprocess.Popen[str], timeout_seconds: float) -> None:
@@ -108,9 +119,7 @@ def run_smoke(expected_version: str, timeout_seconds: float) -> None:
             f"Installed PowerContext version mismatch: expected {expected_version}, received {installed_version}"
         )
 
-    executable = shutil.which("powercontext")
-    if executable is None:
-        raise RuntimeError("The powercontext console script is not installed")  # noqa: TRY003
+    executable = _console_script(sys.executable)
 
     with tempfile.TemporaryDirectory(prefix="powercontext-release-") as temporary:
         root = Path(temporary)
