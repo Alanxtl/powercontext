@@ -1,0 +1,11 @@
+name: powercontext
+version: 0.1.0
+description: "External long-term memory and context retrieval backed by PowerContext."
+hooks:
+  - system_prompt_block
+  - prefetch
+  - queue_prefetch
+  - sync_turn
+  - on_session_end
+  - on_pre_compress
+  - on_memory_write
