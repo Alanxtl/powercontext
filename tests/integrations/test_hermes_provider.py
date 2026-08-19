@@ -39,6 +39,8 @@ class FakeClient:
         self.calls: list[tuple[str, tuple, dict]] = []
         self.base_url = "http://powercontext.test:8000"
         self._remember_count = 0
+        self._revision = 0
+        self._memory_entries: dict[str, dict] = {}
         self.memory_extraction = True
 
     def prepare_context(self, scope_id, query, *, max_bytes):
@@ -55,7 +57,12 @@ class FakeClient:
 
     def search_memory(self, scope_id, query, *, limit, mode):
         self.calls.append(("search_memory", (scope_id, query), {"limit": limit, "mode": mode}))
-        return {"hits": [{"text": "a memory"}]}
+        hits = [
+            {"text": text, "citation": citation}
+            for text, citation in self._memory_entries.items()
+            if query.lower() in text.lower()
+        ]
+        return {"hits": hits or [{"text": "a memory"}]}
 
     def get_memory_entry(self, scope_id, citation):
         self.calls.append(("get_memory_entry", (scope_id, citation), {}))
@@ -63,19 +70,33 @@ class FakeClient:
 
     def remember_memory(self, scope_id, *, kind, text, reason=None):
         self._remember_count += 1
+        self._revision += 1
+        for citation in self._memory_entries.values():
+            citation["memory_ref"]["revision"] = self._revision
+        citation = {
+            "memory_ref": {
+                "family": "memory",
+                "artifact_id": f"memory-{self._remember_count}",
+                "revision": self._revision,
+            },
+            "entry_id": f"entry-{self._remember_count}",
+            "entry_version_id": f"entry-version-{self._remember_count}",
+        }
+        self._memory_entries[text] = citation
         self.calls.append(("remember_memory", (scope_id, kind, text), {"reason": reason}))
         return {
             "status": "remembered",
-            "entry": {
-                "citation": {
-                    "memory_ref": {"family": "memory", "artifact_id": f"memory-{self._remember_count}", "revision": 1},
-                    "entry_id": f"entry-{self._remember_count}",
-                    "entry_version_id": f"entry-version-{self._remember_count}",
-                }
-            },
+            "entry": {"citation": citation},
         }
 
     def retire_memory_entry(self, scope_id, citation, *, reason=None):
+        assert citation["memory_ref"]["revision"] == self._revision
+        self._revision += 1
+        identity = (citation["entry_id"], citation["entry_version_id"])
+        for text, stored in list(self._memory_entries.items()):
+            if (stored["entry_id"], stored["entry_version_id"]) == identity:
+                del self._memory_entries[text]
+                break
         self.calls.append(("retire_memory_entry", (scope_id, citation), {"reason": reason}))
         return {"status": "retired"}
 
@@ -320,13 +341,54 @@ def test_memory_write_retires_mapped_entries_for_replace_and_remove(provider_and
 
     assert [call[0] for call in client.calls] == [
         "remember_memory",
+        "search_memory",
         "retire_memory_entry",
         "remember_memory",
+        "search_memory",
         "retire_memory_entry",
     ]
-    assert client.calls[1][1][1]["entry_id"] == "entry-1"
-    assert client.calls[3][1][1]["entry_id"] == "entry-2"
+    assert client.calls[2][1][1]["entry_id"] == "entry-1"
+    assert client.calls[5][1][1]["entry_id"] == "entry-2"
     assert provider._memory_map == {}
+
+
+def test_memory_map_refreshes_revision_after_multiple_writes(provider_and_client):
+    provider, client = provider_and_client
+
+    provider.on_memory_write("add", "user", "The user prefers uv.")
+    provider._wait_for_background()
+    provider.on_memory_write("add", "user", "The project uses Python.")
+    provider._wait_for_background()
+
+    first_key = provider._memory_item_key("user", "The user prefers uv.")
+    assert provider._memory_map[first_key] == {
+        "entry_id": "entry-1",
+        "entry_version_id": "entry-version-1",
+    }
+
+    provider.on_memory_write(
+        "replace",
+        "user",
+        "The user prefers rye.",
+        {"old_text": "The user prefers uv."},
+    )
+    provider._wait_for_background()
+    provider.on_memory_write(
+        "remove",
+        "user",
+        "",
+        {"old_text": "The user prefers rye."},
+    )
+    provider._wait_for_background()
+
+    retire_calls = [call for call in client.calls if call[0] == "retire_memory_entry"]
+    assert [call[1][1]["memory_ref"]["revision"] for call in retire_calls] == [2, 4]
+    assert provider._memory_map == {
+        provider._memory_item_key("user", "The project uses Python."): {
+            "entry_id": "entry-2",
+            "entry_version_id": "entry-version-2",
+        }
+    }
 
 
 def test_memory_write_skips_replace_and_remove_without_old_text(provider_and_client):

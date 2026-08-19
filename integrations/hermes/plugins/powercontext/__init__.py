@@ -268,6 +268,16 @@ def _citation_from_response(response: Any) -> dict[str, Any] | None:
     }
 
 
+def _entry_identity(citation: Any) -> dict[str, str] | None:
+    if not isinstance(citation, dict):
+        return None
+    entry_id = str(citation.get("entry_id", "")).strip()
+    entry_version_id = str(citation.get("entry_version_id", "")).strip()
+    if not entry_id or not entry_version_id:
+        return None
+    return {"entry_id": entry_id, "entry_version_id": entry_version_id}
+
+
 class PowerContextMemoryProvider(MemoryProvider):
     """Hermes provider backed by a running PowerContext server."""
 
@@ -800,10 +810,17 @@ class PowerContextMemoryProvider(MemoryProvider):
         if citation is None:
             citation = self._find_memory_citation(text)
         if citation is not None:
-            self._memory_map[key] = citation
-            self._save_memory_map()
+            identity = _entry_identity(citation)
+            if identity is not None:
+                self._memory_map[key] = identity
+                self._save_memory_map()
 
-    def _find_memory_citation(self, text: str) -> dict[str, Any] | None:
+    def _find_memory_citation(
+        self,
+        text: str,
+        *,
+        identity: dict[str, str] | None = None,
+    ) -> dict[str, Any] | None:
         try:
             response = self._client.search_memory(
                 self._scope_id,
@@ -820,17 +837,21 @@ class PowerContextMemoryProvider(MemoryProvider):
                 continue
             citation = hit.get("citation")
             normalized = _citation_from_response({"entry": {"citation": citation}})
-            if normalized is not None:
+            if normalized is not None and (identity is None or _entry_identity(normalized) == identity):
                 return normalized
         return None
 
     def _lookup_memory_citation(self, target: str, text: str) -> tuple[str, dict[str, Any] | None]:
         key = self._memory_item_key(target, text)
-        citation = self._memory_map.get(key)
-        if citation is None:
+        stored = self._memory_map.get(key)
+        identity = _entry_identity(stored)
+        citation = self._find_memory_citation(text, identity=identity)
+        if citation is None and identity is None:
             citation = self._find_memory_citation(text)
-            if citation is not None:
-                self._memory_map[key] = citation
+        if citation is not None:
+            stable_identity = _entry_identity(citation)
+            if stable_identity is not None and self._memory_map.get(key) != stable_identity:
+                self._memory_map[key] = stable_identity
                 self._save_memory_map()
         return key, citation
 
