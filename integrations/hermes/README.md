@@ -29,30 +29,32 @@ powercontext server run
 
 The provider uses `http://127.0.0.1:8000` by default. Run the Hermes memory setup
 wizard to configure and activate it interactively; the wizard writes
-non-sensitive values to `$HERMES_HOME/powercontext.yaml`, stores the
+non-sensitive values to `$HERMES_HOME/powercontext/config.json`, stores the
 authorization header in Hermes' `.env` file, and sets `memory.provider`:
 
 ```bash
 hermes memory setup powercontext
 ```
 
-Configuration can also be stored manually in `$HERMES_HOME/powercontext.yaml`:
+Configuration can also be stored manually in `$HERMES_HOME/powercontext/config.json`:
 
-```yaml
-base_url: http://127.0.0.1:8000
-scope_id: "hermes:{profile}:{user_id}"
-max_bytes: 8000
-timeout: 5
-capture_turns: true
-flush_on_session_end: true
-capture_pre_compress: false
+```json
+{
+  "base_url": "http://127.0.0.1:8000",
+  "scope_id": "hermes:{profile}:{user_id}",
+  "max_bytes": 8000,
+  "timeout": 5,
+  "capture_turns": true,
+  "flush_on_session_end": true,
+  "capture_pre_compress": false
+}
 ```
 
 Environment variables override file values:
 
 | Variable | Purpose |
 | --- | --- |
-| `POWERCONTEXT_HERMES_CONFIG` | Path to a Yaml config file (defaults to `$HERMES_HOME/powercontext.yaml`). |
+| `POWERCONTEXT_HERMES_CONFIG` | Path to a JSON config file (defaults to `$HERMES_HOME/powercontext/config.json`). |
 | `POWERCONTEXT_HERMES_BASE_URL` | PowerContext server URL |
 | `POWERCONTEXT_HERMES_AUTHORIZATION` | Complete authorization header, e.g. `Bearer <token>` |
 | `POWERCONTEXT_HERMES_TOKEN` | Token shorthand; used when `AUTHORIZATION` is absent |

@@ -175,9 +175,13 @@ def _safe_scope(value: str) -> str:
     return value[:256] or "hermes:default"
 
 
-def _load_yaml_config(hermes_home: str) -> dict[str, Any]:
+def _config_path(hermes_home: str) -> Path:
     path_value = os.environ.get("POWERCONTEXT_HERMES_CONFIG", "").strip()
-    path = Path(path_value) if path_value else Path(hermes_home) / "powercontext.yaml"
+    return Path(path_value) if path_value else Path(hermes_home) / "powercontext" / "config.json"
+
+
+def _load_json_config(hermes_home: str) -> dict[str, Any]:
+    path = _config_path(hermes_home)
     try:
         raw = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
@@ -185,14 +189,9 @@ def _load_yaml_config(hermes_home: str) -> dict[str, Any]:
     if not raw.strip():
         return {}
     try:
-        import yaml
-    except ImportError:
-        logger.warning("PyYAML is required to read PowerContext YAML configuration from %s", path)
-        return {}
-    try:
-        value = yaml.safe_load(raw)
-    except yaml.YAMLError:
-        logger.warning("Could not parse PowerContext YAML configuration from %s", path)
+        value = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning("Could not parse PowerContext JSON configuration from %s", path)
         return {}
     return value if isinstance(value, dict) else {}
 
@@ -319,7 +318,7 @@ class PowerContextMemoryProvider(MemoryProvider):
         return bool(base_url.strip())
 
     def unavailable_reason(self) -> str:
-        return "Set POWERCONTEXT_HERMES_BASE_URL or configure PowerContext in $HERMES_HOME/powercontext.yaml."
+        return "Set POWERCONTEXT_HERMES_BASE_URL or configure PowerContext in $HERMES_HOME/powercontext/config.json."
 
     def get_config_schema(self) -> list[dict[str, Any]]:
         """Describe the fields used by Hermes' generic memory setup wizard."""
@@ -376,22 +375,16 @@ class PowerContextMemoryProvider(MemoryProvider):
         ]
 
     def save_config(self, values: dict[str, Any], hermes_home: str) -> None:
-        """Persist generic Hermes setup values to ``powercontext.yaml``."""
-        path_value = os.environ.get("POWERCONTEXT_HERMES_CONFIG", "").strip()
-        path = Path(path_value) if path_value else Path(hermes_home) / "powercontext.yaml"
-        config = _load_yaml_config(hermes_home)
+        """Persist generic Hermes setup values to Hermes' flat JSON backend."""
+        path = _config_path(hermes_home)
+        config = _load_json_config(hermes_home)
         config.update(values)
-
-        try:
-            import yaml
-        except ImportError as error:  # pragma: no cover - Hermes ships PyYAML.
-            raise RuntimeError("PyYAML is required to save PowerContext configuration") from error  # noqa: TRY003
 
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary_path = path.with_name(f".{path.name}.tmp")
         try:
             temporary_path.write_text(
-                yaml.safe_dump(config, allow_unicode=True, sort_keys=False),
+                json.dumps(config, ensure_ascii=False, indent=2, sort_keys=False) + "\n",
                 encoding="utf-8",
             )
             os.replace(temporary_path, path)
@@ -400,7 +393,7 @@ class PowerContextMemoryProvider(MemoryProvider):
 
     def initialize(self, session_id: str, **kwargs: Any) -> None:
         hermes_home = str(kwargs.get("hermes_home") or Path.home() / ".hermes")
-        file_config = _load_yaml_config(hermes_home)
+        file_config = _load_json_config(hermes_home)
         merged_config = {**file_config, **self._config}
         self._config = merged_config
         self._session_id = session_id
@@ -600,23 +593,27 @@ class PowerContextMemoryProvider(MemoryProvider):
         if not self._client or not self._scope_id or not query.strip():
             return
         session_key = session_id or self._session_id
-        try:
-            response = self._client.prepare_context(
-                self._scope_id,
-                query[:8192],
-                max_bytes=_as_int(
-                    _config_value(self._config, "max_bytes", "POWERCONTEXT_HERMES_MAX_BYTES", _DEFAULT_MAX_BYTES),
-                    _DEFAULT_MAX_BYTES,
-                    minimum=512,
-                    maximum=32768,
-                ),
-            )
-            content = response.get("content") if response.get("status") == "ready" else ""
-            if isinstance(content, str) and content.strip():
-                with self._prefetch_lock:
-                    self._prefetch_cache[(session_key, query)] = content
-        except PowerContextError:
-            logger.debug("PowerContext queued prefetch failed", exc_info=True)
+
+        def prepare() -> None:
+            try:
+                response = self._client.prepare_context(
+                    self._scope_id,
+                    query[:8192],
+                    max_bytes=_as_int(
+                        _config_value(self._config, "max_bytes", "POWERCONTEXT_HERMES_MAX_BYTES", _DEFAULT_MAX_BYTES),
+                        _DEFAULT_MAX_BYTES,
+                        minimum=512,
+                        maximum=32768,
+                    ),
+                )
+                content = response.get("content") if response.get("status") == "ready" else ""
+                if isinstance(content, str) and content.strip():
+                    with self._prefetch_lock:
+                        self._prefetch_cache[(session_key, query)] = content
+            except PowerContextError:
+                logger.debug("PowerContext queued prefetch failed", exc_info=True)
+
+        self._enqueue_memory_write(prepare)
 
     def recall_status(self):
         status = self._last_recall
@@ -640,10 +637,12 @@ class PowerContextMemoryProvider(MemoryProvider):
         if not user_content and not assistant_content:
             return
         effective_session = session_id or self._session_id
-        self._capture_text(
-            self._turn_source_id(effective_session, user_content, assistant_content),
-            f"[user]\n{user_content}\n\n[assistant]\n{assistant_content}"[:_MAX_TURN_CHARS],
-            {"kind": "hermes-turn", "session_id": effective_session},
+        self._enqueue_memory_write(
+            lambda: self._capture_text(
+                self._turn_source_id(effective_session, user_content, assistant_content),
+                f"[user]\n{user_content}\n\n[assistant]\n{assistant_content}"[:_MAX_TURN_CHARS],
+                {"kind": "hermes-turn", "session_id": effective_session},
+            )
         )
 
     def _turn_source_id(self, session_id: str, user_content: str, assistant_content: str) -> str:

@@ -153,16 +153,46 @@ def test_queue_prefetch_honors_max_bytes_environment_override(provider_and_clien
     )
 
 
-def test_yaml_config_is_loaded_from_hermes_home(tmp_path, hermes_modules):
+def test_queue_prefetch_does_not_wait_for_http(provider_and_client):
+    provider, client = provider_and_client
+    started = threading.Event()
+    release = threading.Event()
+    caller_done = threading.Event()
+
+    def blocked_prepare(*args, **kwargs):
+        started.set()
+        release.wait(timeout=1)
+        return {"status": "ready", "content": "context"}
+
+    client.prepare_context = blocked_prepare
+    caller = threading.Thread(
+        target=lambda: (provider.queue_prefetch("query"), caller_done.set()),
+        daemon=True,
+    )
+    caller.start()
+
+    assert started.wait(timeout=1)
+    assert caller_done.wait(timeout=0.2)
+    release.set()
+    caller.join(timeout=1)
+    provider._wait_for_background()
+
+
+def test_json_config_is_loaded_from_hermes_home(tmp_path, hermes_modules):
     provider_module, _cli_module = hermes_modules
     client = FakeClient()
     provider = provider_module.PowerContextMemoryProvider(client_factory=lambda config: client)
-    config_path = tmp_path / "powercontext.yaml"
+    config_path = tmp_path / "powercontext" / "config.json"
+    config_path.parent.mkdir()
     config_path.write_text(
-        "base_url: http://powercontext.test:9000\n"
-        "scope_id: hermes:{profile}:{user_id}\n"
-        "max_bytes: 1200\n"
-        "capture_turns: false\n",
+        json.dumps(
+            {
+                "base_url": "http://powercontext.test:9000",
+                "scope_id": "hermes:{profile}:{user_id}",
+                "max_bytes": 1200,
+                "capture_turns": False,
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -174,6 +204,15 @@ def test_yaml_config_is_loaded_from_hermes_home(tmp_path, hermes_modules):
     assert provider._config["capture_turns"] is False
     assert provider._scope_id == "hermes:coder:user-7"
     provider.shutdown()
+
+
+def test_cli_reads_the_same_json_config_path(tmp_path, hermes_modules):
+    _provider_module, cli_module = hermes_modules
+    config_path = tmp_path / "powercontext" / "config.json"
+    config_path.parent.mkdir()
+    config_path.write_text(json.dumps({"base_url": "http://powercontext.test:9000"}), encoding="utf-8")
+
+    assert cli_module._load_config(tmp_path) == {"base_url": "http://powercontext.test:9000"}
 
 
 def test_memory_setup_schema_exposes_powercontext_configuration(hermes_modules):
@@ -191,12 +230,13 @@ def test_memory_setup_schema_exposes_powercontext_configuration(hermes_modules):
     assert "flush_on_session_end" in fields
 
 
-def test_memory_setup_saves_powercontext_yaml_and_preserves_existing_values(tmp_path, hermes_modules):
+def test_memory_setup_saves_powercontext_json_and_preserves_existing_values(tmp_path, hermes_modules):
     provider_module, _cli_module = hermes_modules
     provider = provider_module.PowerContextMemoryProvider()
-    config_path = tmp_path / "powercontext.yaml"
+    config_path = tmp_path / "powercontext" / "config.json"
+    config_path.parent.mkdir()
     config_path.write_text(
-        "base_url: http://powercontext.test:8000\ncustom_setting: keep-me\n",
+        json.dumps({"base_url": "http://powercontext.test:8000", "custom_setting": "keep-me"}),
         encoding="utf-8",
     )
 
@@ -205,9 +245,7 @@ def test_memory_setup_saves_powercontext_yaml_and_preserves_existing_values(tmp_
         str(tmp_path),
     )
 
-    import yaml
-
-    saved = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
     assert saved == {
         "base_url": "http://powercontext.test:9000",
         "custom_setting": "keep-me",
@@ -225,6 +263,31 @@ def test_sync_turn_is_flushed_before_session_end(provider_and_client):
     assert names == ["capture_content", "get_capabilities", "flush_memory"]
     assert client.calls[0][1][0] == "hermes:coder:user-7"
     assert client.calls[0][2]["metadata"]["kind"] == "hermes-turn"
+
+
+def test_sync_turn_does_not_wait_for_http(provider_and_client):
+    provider, client = provider_and_client
+    started = threading.Event()
+    release = threading.Event()
+    caller_done = threading.Event()
+
+    def blocked_capture(*args, **kwargs):
+        started.set()
+        release.wait(timeout=1)
+        return {}
+
+    client.capture_content = blocked_capture
+    caller = threading.Thread(
+        target=lambda: (provider.sync_turn("user", "assistant"), caller_done.set()),
+        daemon=True,
+    )
+    caller.start()
+
+    assert started.wait(timeout=1)
+    assert caller_done.wait(timeout=0.2)
+    release.set()
+    caller.join(timeout=1)
+    provider._wait_for_background()
 
 
 def test_session_end_skips_flush_when_memory_extraction_is_disabled(provider_and_client):

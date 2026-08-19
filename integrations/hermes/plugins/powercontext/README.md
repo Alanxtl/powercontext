@@ -8,7 +8,7 @@ Requires Hermes Agent v0.20.4 or newer.
 
 The plugin deliberately uses only the Python standard library for HTTP, so it
 can be copied into Hermes without adding an HTTP client dependency. Its
-provider configuration is read from `$HERMES_HOME/powercontext.yaml`.
+provider configuration is read from `$HERMES_HOME/powercontext/config.json`.
 
 The provider participates in Hermes' generic memory setup wizard:
 
@@ -16,7 +16,7 @@ The provider participates in Hermes' generic memory setup wizard:
 hermes memory setup powercontext
 ```
 
-Non-sensitive values are saved to `powercontext.yaml`; authorization is saved
+Non-sensitive values are saved to `powercontext/config.json`; authorization is saved
 through Hermes' `.env` secret store.
 
 Automatic Source-to-Memory extraction is available only when the PowerContext
