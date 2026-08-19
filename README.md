@@ -56,7 +56,7 @@ See the [Codex quickstart](docs/en/docs/tutorials/codex-quickstart.md) for a fir
 | --- | --- |
 | Codex plugin | Restore relevant project memory and explicitly remember, revise, or retire entries while coding |
 | DeepSeek Harness plugin | Restore relevant project memory and explicitly remember, revise, or retire entries in DeepSeek Harness |
-| Hermes plugin | Restore relevant project memory and explicitly remember, revise, or retire entries in Hermes |
+| Hermes plugin | Restore relevant project memory and explicitly remember, revise, or retire entries in Hermes. See [Hermes integration](./integrations/hermes/README.md) for more details |
 | CLI | Install the plugin, run or connect to the Server, inspect content, and diagnose an installation |
 | Python client | Call the Server's Source and Memory API from an application |
 | Core SDK | Embed PowerContext contracts or supply custom adapters in a Python system |
