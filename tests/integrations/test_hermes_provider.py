@@ -185,14 +185,12 @@ def test_json_config_is_loaded_from_hermes_home(tmp_path, hermes_modules):
     config_path = tmp_path / "powercontext" / "config.json"
     config_path.parent.mkdir()
     config_path.write_text(
-        json.dumps(
-            {
-                "base_url": "http://powercontext.test:9000",
-                "scope_id": "hermes:{profile}:{user_id}",
-                "max_bytes": 1200,
-                "capture_turns": False,
-            }
-        ),
+        json.dumps({
+            "base_url": "http://powercontext.test:9000",
+            "scope_id": "hermes:{profile}:{user_id}",
+            "max_bytes": 1200,
+            "capture_turns": False,
+        }),
         encoding="utf-8",
     )
 
