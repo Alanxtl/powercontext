@@ -160,6 +160,13 @@ def cmd_retire(args: argparse.Namespace) -> None:
 def cmd_flush(args: argparse.Namespace) -> None:
     provider = _provider(args)
     try:
+        capabilities = provider._client.get_capabilities()
+        if capabilities.get("memory_extraction") is False:
+            print(
+                "PowerContext memory extraction is disabled; configure "
+                "POWERCONTEXT_SERVER_INFERENCE_GENERATION_MODEL and restart the server."
+            )
+            return
         _print_result(provider._client.flush_memory(provider._scope_id))
     except PowerContextError as error:
         print(f"PowerContext flush failed: {error}")

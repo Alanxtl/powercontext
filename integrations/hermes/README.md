@@ -85,9 +85,23 @@ keeping memories available across sessions.
   entries and retires the mapped PowerContext entry for replacements/removals.
 - Agent tools expose search, exact citation reads, explicit writes, and memory
   retirement.
+- Session-end and pre-compression flushes first check the server's
+  `memory_extraction` capability. If extraction is disabled, captured Sources
+  remain available and the flush is skipped without interrupting Hermes.
 
 All backend failures fail open: they are logged without request content and do
 not interrupt the Hermes conversation.
+
+Automatic Source-to-Memory extraction requires a PowerContext generation model.
+Configure `POWERCONTEXT_SERVER_INFERENCE_GENERATION_MODEL` together with the
+provider credentials, then restart the server. Verify the result with:
+
+```bash
+powercontext capabilities
+```
+
+The output must report `Memory extraction: enabled` before `hermes powercontext
+flush` or automatic session-end extraction can create Memory entries.
 
 ## CLI commands
 

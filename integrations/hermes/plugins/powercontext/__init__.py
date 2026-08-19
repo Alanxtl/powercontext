@@ -293,6 +293,7 @@ class PowerContextMemoryProvider(MemoryProvider):
         self._prefetch_cache: dict[tuple[str, str], str] = {}
         self._prefetch_lock = threading.Lock()
         self._last_recall: Any = None
+        self._memory_extraction_supported: bool | None = None
         self._precompress_stream_id = ""
         self._precompress_snapshot: list[str] = []
         self._memory_map_path: Path | None = None
@@ -393,6 +394,7 @@ class PowerContextMemoryProvider(MemoryProvider):
         merged_config = {**file_config, **self._config}
         self._config = merged_config
         self._session_id = session_id
+        self._memory_extraction_supported = None
         self._precompress_stream_id = session_id
         self._precompress_snapshot = []
         self._memory_map_path = Path(hermes_home) / "powercontext-memory-map.json"
@@ -652,6 +654,27 @@ class PowerContextMemoryProvider(MemoryProvider):
         ):
             return
         self._wait_for_background()
+        self._flush_memory_if_supported()
+
+    def _flush_memory_if_supported(self) -> None:
+        if not self._client or not self._scope_id:
+            return
+        if self._memory_extraction_supported is None:
+            try:
+                capabilities = self._client.get_capabilities()
+            except PowerContextError:
+                # Keep compatibility with older servers that predate the
+                # capabilities endpoint; the flush call remains the source
+                # of truth in that case.
+                logger.debug("PowerContext capabilities lookup failed", exc_info=True)
+                self._memory_extraction_supported = True
+            else:
+                self._memory_extraction_supported = bool(capabilities.get("memory_extraction", True))
+                if not self._memory_extraction_supported:
+                    logger.info("PowerContext memory extraction is disabled; skipping memory flush")
+
+        if not self._memory_extraction_supported:
+            return
         try:
             self._client.flush_memory(self._scope_id)
         except PowerContextError:
@@ -723,7 +746,7 @@ class PowerContextMemoryProvider(MemoryProvider):
                     "message_count": len(new_entries),
                 },
             )
-            self._client.flush_memory(self._scope_id)
+            self._flush_memory_if_supported()
         except PowerContextError:
             logger.debug("PowerContext pre-compression persistence failed", exc_info=True)
             return ""

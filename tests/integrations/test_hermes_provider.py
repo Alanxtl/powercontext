@@ -39,6 +39,7 @@ class FakeClient:
         self.calls: list[tuple[str, tuple, dict]] = []
         self.base_url = "http://powercontext.test:8000"
         self._remember_count = 0
+        self.memory_extraction = True
 
     def prepare_context(self, scope_id, query, *, max_bytes):
         self.calls.append(("prepare_context", (scope_id, query), {"max_bytes": max_bytes}))
@@ -85,6 +86,10 @@ class FakeClient:
     def get_readiness(self):
         self.calls.append(("get_readiness", (), {}))
         return {"status": "ready"}
+
+    def get_capabilities(self):
+        self.calls.append(("get_capabilities", (), {}))
+        return {"memory_extraction": self.memory_extraction}
 
 
 @pytest.fixture
@@ -196,9 +201,19 @@ def test_sync_turn_is_flushed_before_session_end(provider_and_client):
     provider.on_session_end([])
 
     names = [call[0] for call in client.calls]
-    assert names == ["capture_content", "flush_memory"]
+    assert names == ["capture_content", "get_capabilities", "flush_memory"]
     assert client.calls[0][1][0] == "hermes:coder:user-7"
     assert client.calls[0][2]["metadata"]["kind"] == "hermes-turn"
+
+
+def test_session_end_skips_flush_when_memory_extraction_is_disabled(provider_and_client):
+    provider, client = provider_and_client
+    client.memory_extraction = False
+
+    provider.sync_turn("Captured as a Source.", "No extraction is available.", session_id="session-1")
+    provider.on_session_end([])
+
+    assert [call[0] for call in client.calls] == ["capture_content", "get_capabilities"]
 
 
 def test_pre_compress_persists_context_before_compression(provider_and_client):
@@ -211,7 +226,11 @@ def test_pre_compress_persists_context_before_compression(provider_and_client):
     ])
 
     assert result == ""
-    assert [call[0] for call in client.calls] == ["capture_content", "flush_memory"]
+    assert [call[0] for call in client.calls] == [
+        "capture_content",
+        "get_capabilities",
+        "flush_memory",
+    ]
     assert "backward compatible" in client.calls[0][1][2]
     assert client.calls[0][2]["metadata"]["kind"] == "hermes-context-compression"
 

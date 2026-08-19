@@ -105,6 +105,9 @@ class PowerContextClient:
     def get_readiness(self) -> dict[str, Any]:
         return self._request("/health/ready", method="GET")
 
+    def get_capabilities(self) -> dict[str, Any]:
+        return self._request("/v1/capabilities", method="GET")
+
     def prepare_context(self, scope_id: str, query: str, *, max_bytes: int) -> dict[str, Any]:
         return self._request(
             "/v1/context/prepare",

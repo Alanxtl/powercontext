@@ -19,6 +19,12 @@ hermes memory setup powercontext
 Non-sensitive values are saved to `powercontext.yaml`; authorization is saved
 through Hermes' `.env` secret store.
 
+Automatic Source-to-Memory extraction is available only when the PowerContext
+server reports `memory_extraction: true`. Configure a server generation model
+with `POWERCONTEXT_SERVER_INFERENCE_GENERATION_MODEL` and its provider
+credentials, then restart the server. Source capture and retrieval continue to
+work when extraction is disabled.
+
 Pre-compression capture is opt-in. Set `capture_pre_compress: true` in the
 provider configuration, or set
 `POWERCONTEXT_HERMES_CAPTURE_PRE_COMPRESS=1`. When enabled, only new user and
