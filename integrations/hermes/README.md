@@ -5,6 +5,8 @@ PowerContext server. It keeps Hermes responsible for memory lifecycle and Agent
 orchestration while PowerContext provides external storage, retrieval, context
 preparation, and memory lifecycle operations.
 
+The integration requires Hermes Agent v0.20.4 or newer.
+
 ## Install as a directory provider
 
 Copy `plugins/powercontext` into one of the Hermes provider locations:
@@ -17,13 +19,6 @@ cp -R integrations/hermes/plugins/powercontext \
 For project-local installation, copy it to `.hermes/plugins/powercontext` and
 enable project plugins with `HERMES_ENABLE_PROJECT_PLUGINS=1`.
 
-Activate it in Hermes configuration:
-
-```yaml
-memory:
-  provider: powercontext
-```
-
 Start PowerContext separately:
 
 ```bash
@@ -32,24 +27,32 @@ powercontext server run
 
 ## Configuration
 
-The provider uses `http://127.0.0.1:8000` by default. Configuration can be
-stored in `$HERMES_HOME/powercontext.json`:
+The provider uses `http://127.0.0.1:8000` by default. Run the Hermes memory setup
+wizard to configure and activate it interactively; the wizard writes
+non-sensitive values to `$HERMES_HOME/powercontext.yaml`, stores the
+authorization header in Hermes' `.env` file, and sets `memory.provider`:
 
-```json
-{
-  "base_url": "http://127.0.0.1:8000",
-  "scope_id": "hermes:{profile}:{user_id}",
-  "max_bytes": 8000,
-  "timeout": 5,
-  "capture_turns": true,
-  "flush_on_session_end": true
-}
+```bash
+hermes memory setup powercontext
+```
+
+Configuration can also be stored manually in `$HERMES_HOME/powercontext.yaml`:
+
+```yaml
+base_url: http://127.0.0.1:8000
+scope_id: "hermes:{profile}:{user_id}"
+max_bytes: 8000
+timeout: 5
+capture_turns: true
+flush_on_session_end: true
+capture_pre_compress: false
 ```
 
 Environment variables override file values:
 
 | Variable | Purpose |
 | --- | --- |
+| `POWERCONTEXT_HERMES_CONFIG` | Path to a Yaml config file (defaults to `$HERMES_HOME/powercontext.yaml`). |
 | `POWERCONTEXT_HERMES_BASE_URL` | PowerContext server URL |
 | `POWERCONTEXT_HERMES_AUTHORIZATION` | Complete authorization header, e.g. `Bearer <token>` |
 | `POWERCONTEXT_HERMES_TOKEN` | Token shorthand; used when `AUTHORIZATION` is absent |
@@ -58,6 +61,7 @@ Environment variables override file values:
 | `POWERCONTEXT_HERMES_TIMEOUT` | HTTP request timeout in seconds |
 | `POWERCONTEXT_HERMES_CAPTURE_TURNS` | Capture completed turns as PowerContext Sources |
 | `POWERCONTEXT_HERMES_FLUSH_ON_SESSION_END` | Run memory extraction at session end |
+| `POWERCONTEXT_HERMES_CAPTURE_PRE_COMPRESS` | Capture filtered new user/assistant turns before compression; disabled by default |
 
 The default scope template is `hermes:{profile}:{user_id}`. The provider uses
 the active Hermes profile and gateway user identifier when available. For local
@@ -74,10 +78,11 @@ keeping memories available across sessions.
 - `sync_turn()` captures the completed turn through `/v1/sources/content` in a
   non-blocking single-worker queue.
 - `on_session_end()` waits for queued writes and calls `/v1/memory/flush`.
-- `on_pre_compress()` persists the bounded pre-compression conversation and
-  flushes it before Hermes discards old messages.
-- `on_memory_write()` mirrors built-in Hermes memory additions/replacements to
-  PowerContext as explicit memory entries.
+- `on_pre_compress()` optionally persists only filtered new user/assistant turns
+  and flushes them before Hermes discards old messages. It is disabled by
+  default and uses stable source IDs for overlapping compression windows.
+- `on_memory_write()` mirrors built-in Hermes memory additions as explicit
+  entries and retires the mapped PowerContext entry for replacements/removals.
 - Agent tools expose search, exact citation reads, explicit writes, and memory
   retirement.
 
@@ -101,10 +106,6 @@ Use `--scope-id` when inspecting a scope explicitly:
 ```bash
 hermes powercontext search "deployment decision" --scope-id hermes-smoke-test
 ```
-
-The `get` and `retire` commands accept the five fields returned in a search
-citation: `family`, `artifact_id`, `revision`, `entry_id`, and
-`entry_version_id`.
 
 ## Package provider option
 

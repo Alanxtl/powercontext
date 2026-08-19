@@ -22,10 +22,20 @@ def _hermes_home() -> Path:
 
 def _load_config(home: Path) -> dict[str, Any]:
     path_value = os.environ.get("POWERCONTEXT_HERMES_CONFIG", "").strip()
-    path = Path(path_value) if path_value else home / "powercontext.json"
+    path = Path(path_value) if path_value else home / "powercontext.yaml"
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        raw = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return {}
+    if not raw.strip():
+        return {}
+    try:
+        import yaml
+    except ImportError:
+        return {}
+    try:
+        value = yaml.safe_load(raw)
+    except yaml.YAMLError:
         return {}
     return value if isinstance(value, dict) else {}
 

@@ -1,6 +1,7 @@
 """Declarative configuration for the PowerContext Hermes Provider."""
 
 from plugins.memory.config_schema import (  # ty: ignore[unresolved-import]
+    KIND_BOOL,
     KIND_NUMBER,
     KIND_SECRET,
     KIND_TEXT,
@@ -51,6 +52,27 @@ CONFIG_SCHEMA = ProviderConfigSchema(
             kind=KIND_NUMBER,
             default="5",
             description="Per-request timeout for PowerContext.",
+        ),
+        ProviderField(
+            key="capture_pre_compress",
+            label="Capture new turns before compression",
+            kind=KIND_BOOL,
+            default="false",
+            description="Filter and persist new user/assistant turns before Hermes compresses context.",
+        ),
+        ProviderField(
+            key="capture_turns",
+            label="Capture completed turns",
+            kind=KIND_BOOL,
+            default="true",
+            description="Persist completed Hermes turns as PowerContext Sources.",
+        ),
+        ProviderField(
+            key="flush_on_session_end",
+            label="Flush memory at session end",
+            kind=KIND_BOOL,
+            default="true",
+            description="Run bounded memory extraction when the Hermes session ends.",
         ),
     ),
 )

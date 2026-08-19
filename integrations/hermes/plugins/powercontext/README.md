@@ -4,10 +4,28 @@ This plugin implements Hermes' `MemoryProvider` interface using the PowerContext
 HTTP API. See [`integrations/hermes/README.md`](../../README.md) for setup,
 configuration, scope isolation, and runtime behavior.
 
-The plugin deliberately uses only the Python standard library for HTTP, so it
-can be copied into Hermes without adding a dependency to the Hermes runtime.
+Requires Hermes Agent v0.20.4 or newer.
 
-## CLI
+The plugin deliberately uses only the Python standard library for HTTP, so it
+can be copied into Hermes without adding an HTTP client dependency. Its
+provider configuration is read from `$HERMES_HOME/powercontext.yaml`.
+
+The provider participates in Hermes' generic memory setup wizard:
+
+```bash
+hermes memory setup powercontext
+```
+
+Non-sensitive values are saved to `powercontext.yaml`; authorization is saved
+through Hermes' `.env` secret store.
+
+Pre-compression capture is opt-in. Set `capture_pre_compress: true` in the
+provider configuration, or set
+`POWERCONTEXT_HERMES_CAPTURE_PRE_COMPRESS=1`. When enabled, only new user and
+assistant turns are captured; system/tool messages are excluded and detected
+secrets are redacted before sending them to PowerContext.
+
+## CLI commands
 
 After enabling the provider and restarting Hermes so it discovers the command
 tree, use:
