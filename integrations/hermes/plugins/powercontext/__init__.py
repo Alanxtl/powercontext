@@ -814,12 +814,7 @@ class PowerContextMemoryProvider(MemoryProvider):
                 self._memory_map[key] = identity
                 self._save_memory_map()
 
-    def _find_memory_citation(
-        self,
-        text: str,
-        *,
-        identity: dict[str, str] | None = None,
-    ) -> dict[str, Any] | None:
+    def _find_memory_citations(self, text: str) -> list[dict[str, Any]]:
         try:
             response = self._client.search_memory(
                 self._scope_id,
@@ -829,30 +824,65 @@ class PowerContextMemoryProvider(MemoryProvider):
             )
         except PowerContextError:
             logger.debug("PowerContext memory citation lookup failed", exc_info=True)
-            return None
+            return []
         hits = response.get("hits", []) if isinstance(response, dict) else []
+        citations: list[dict[str, Any]] = []
+        identities: set[tuple[str, str]] = set()
         for hit in hits:
-            if not isinstance(hit, dict) or str(hit.get("text", "")).strip() != text.strip():
+            if not isinstance(hit, dict):
+                continue
+            hit_text = str(hit.get("text", "")).strip()
+            if not hit_text or text.strip() not in hit_text:
                 continue
             citation = hit.get("citation")
             normalized = _citation_from_response({"entry": {"citation": citation}})
-            if normalized is not None and (identity is None or _entry_identity(normalized) == identity):
-                return normalized
+            entry_identity = _entry_identity(normalized)
+            if entry_identity is None:
+                continue
+            identity_key = (entry_identity["entry_id"], entry_identity["entry_version_id"])
+            if identity_key in identities:
+                continue
+            identities.add(identity_key)
+            citations.append(normalized)
+        return citations
+
+    def _find_memory_citation(
+        self,
+        text: str,
+        *,
+        identity: dict[str, str] | None = None,
+    ) -> dict[str, Any] | None:
+        for citation in self._find_memory_citations(text):
+            if identity is None or _entry_identity(citation) == identity:
+                return citation
         return None
 
     def _lookup_memory_citation(self, target: str, text: str) -> tuple[str, dict[str, Any] | None]:
         key = self._memory_item_key(target, text)
-        stored = self._memory_map.get(key)
-        identity = _entry_identity(stored)
-        citation = self._find_memory_citation(text, identity=identity)
-        if citation is None and identity is None:
-            citation = self._find_memory_citation(text)
-        if citation is not None:
-            stable_identity = _entry_identity(citation)
-            if stable_identity is not None and self._memory_map.get(key) != stable_identity:
-                self._memory_map[key] = stable_identity
-                self._save_memory_map()
-        return key, citation
+        query = text.strip()
+        if not query:
+            return key, None
+
+        candidates = self._find_memory_citations(query)
+        target_prefix = f"{self._scope_id}:{target}:"
+        matches: list[tuple[str, dict[str, Any]]] = []
+        for mapped_key, stored in self._memory_map.items():
+            if not mapped_key.startswith(target_prefix):
+                continue
+            identity = _entry_identity(stored)
+            if identity is None:
+                continue
+            matching_candidates = [candidate for candidate in candidates if _entry_identity(candidate) == identity]
+            if len(matching_candidates) == 1:
+                matches.append((mapped_key, matching_candidates[0]))
+
+        if len(matches) != 1:
+            logger.debug(
+                "Skipping Hermes memory change because old_text matched %d mapped entries",
+                len(matches),
+            )
+            return key, None
+        return matches[0]
 
     def _apply_memory_change(self, action: str, target: str, content: str, old_text: str) -> None:
         old_key, citation = self._lookup_memory_citation(target, old_text)

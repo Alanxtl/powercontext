@@ -413,6 +413,51 @@ def test_memory_write_retires_mapped_entries_for_replace_and_remove(provider_and
     assert provider._memory_map == {}
 
 
+def test_memory_write_matches_partial_old_text_for_replace_and_remove(provider_and_client):
+    provider, client = provider_and_client
+
+    provider.on_memory_write("add", "user", "The user prefers uv.")
+    provider._wait_for_background()
+    provider.on_memory_write(
+        "replace",
+        "user",
+        "The user prefers rye.",
+        {"old_text": "prefers uv"},
+    )
+    provider._wait_for_background()
+    provider.on_memory_write(
+        "remove",
+        "user",
+        "",
+        {"old_text": "prefers rye"},
+    )
+    provider._wait_for_background()
+
+    retire_calls = [call for call in client.calls if call[0] == "retire_memory_entry"]
+    assert [call[1][1]["entry_id"] for call in retire_calls] == ["entry-1", "entry-2"]
+    assert [call[1][1]["memory_ref"]["revision"] for call in retire_calls] == [1, 3]
+    assert provider._memory_map == {}
+
+
+def test_memory_write_does_not_retire_unmapped_same_text(provider_and_client):
+    provider, client = provider_and_client
+    text = "The user prefers uv."
+    client.remember_memory(
+        provider._scope_id,
+        kind="preference",
+        text=text,
+        reason="created directly in PowerContext",
+    )
+    client.calls.clear()
+
+    provider.on_memory_write("remove", "user", "", {"old_text": text})
+    provider._wait_for_background()
+
+    assert [call[0] for call in client.calls] == ["search_memory"]
+    assert text in client._memory_entries
+    assert provider._memory_map == {}
+
+
 def test_memory_map_refreshes_revision_after_multiple_writes(provider_and_client):
     provider, client = provider_and_client
 

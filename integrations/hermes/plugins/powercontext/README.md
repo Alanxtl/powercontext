@@ -10,11 +10,15 @@ The plugin deliberately uses only the Python standard library for HTTP, so it
 can be copied into Hermes without adding an HTTP client dependency. Its
 provider configuration is read from `$HERMES_HOME/powercontext/config.json`.
 
-The provider participates in Hermes' generic memory setup wizard:
+The provider participates in Hermes' generic memory setup wizard. Run the
+command below and select `PowerContext` from the provider list:
 
 ```bash
-hermes memory setup powercontext
+hermes memory setup
 ```
+
+On Hermes v0.20.4, `hermes memory setup powercontext` only selects the provider
+and does not open the provider configuration wizard.
 
 Non-sensitive values are saved to `powercontext/config.json`; authorization is saved
 through Hermes' `.env` secret store.

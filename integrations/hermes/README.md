@@ -27,14 +27,19 @@ powercontext server run
 
 ## Configuration
 
-The provider uses `http://127.0.0.1:8000` by default. Run the Hermes memory setup
-wizard to configure and activate it interactively; the wizard writes
-non-sensitive values to `$HERMES_HOME/powercontext/config.json`, stores the
-authorization header in Hermes' `.env` file, and sets `memory.provider`:
+The provider uses `http://127.0.0.1:8000` by default. Run the generic Hermes
+memory setup wizard and select `PowerContext` to configure and activate it
+interactively; the wizard writes non-sensitive values to
+`$HERMES_HOME/powercontext/config.json`, stores the authorization header in
+Hermes' `.env` file, and sets `memory.provider`:
 
 ```bash
-hermes memory setup powercontext
+hermes memory setup
 ```
+
+On Hermes v0.20.4, use the generic command above instead of
+`hermes memory setup powercontext`; the provider-specific shortcut does not
+open the configuration wizard.
 
 Configuration can also be stored manually in `$HERMES_HOME/powercontext/config.json`:
 
