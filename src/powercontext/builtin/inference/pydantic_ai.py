@@ -1,10 +1,25 @@
+# Copyright (c) 2026 OceanBase.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Optional adapters backed by application-injected Pydantic AI objects."""
 
 from __future__ import annotations
 
 import asyncio
 from collections.abc import Sequence
-from typing import Generic, TypeVar, cast
+from copy import copy
+from typing import Generic, Self, TypeVar, cast
 
 from pydantic import BaseModel, Field
 
@@ -171,6 +186,14 @@ class PydanticAIEmbeddingModel:
         self.profile = profile
         self._batch_size = batch_size
         self._limits = InferenceLimits() if limits is None else limits
+
+    def _without_instrumentation(self) -> Self:
+        """Copy this adapter for readiness without changing operational tracing."""
+
+        adapter = copy(self)
+        adapter._embedder = copy(self._embedder)
+        adapter._embedder.instrument = False
+        return adapter
 
     async def embed(self, texts: tuple[str, ...], /) -> EmbeddingResult:
         """Embed documents and validate order, count, dimension, and finite values."""

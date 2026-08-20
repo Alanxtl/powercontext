@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2026 OceanBase.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 // generated from openapi/powercontext.yaml; do not edit.
 
 export const OPERATIONS = {
@@ -6,6 +22,10 @@ export const OPERATIONS = {
   get_capabilities: { method: 'GET', path: '/v1/capabilities', location: null, scope: false },
   capture_content_source: { method: 'POST', path: '/v1/sources/content', location: "body", scope: true },
   prepare_context: { method: 'POST', path: '/v1/context/prepare', location: "body", scope: true },
+  create_work_contract: { method: 'POST', path: '/v1/work/contracts/create', location: "body", scope: true },
+  handoff_current_work: { method: 'POST', path: '/v1/work/handoffs/prepare-current', location: "body", scope: true },
+  acknowledge_handoff: { method: 'POST', path: '/v1/work/handoffs/acknowledge', location: "body", scope: true },
+  record_task_outcome: { method: 'POST', path: '/v1/work/outcomes/record', location: "body", scope: true },
   activate_handoff: { method: 'POST', path: '/v1/handoff/activate', location: "body", scope: true },
   prepare_handoff: { method: 'POST', path: '/v1/handoff/prepare', location: "body", scope: true },
   finalize_handoff: { method: 'POST', path: '/v1/handoff/finalize', location: "body", scope: true },

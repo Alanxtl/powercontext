@@ -1,3 +1,17 @@
+# Copyright (c) 2026 OceanBase.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Ready-to-run Server composition over the built-in runtime."""
 
 from __future__ import annotations
@@ -64,7 +78,7 @@ def create_server_app(
     resolved_tracing = ServerTracing.context_only() if tracing is None else tracing
     if metrics is not None:
         metrics.set_ready(False)
-    readiness_probe = _ServerReadinessProbe(metrics)
+    readiness_probe = _ServerReadinessProbe(metrics, tracing=resolved_tracing)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -80,6 +94,7 @@ def create_server_app(
             handoff_pipeline=handoff_pipeline,
             embedding_model=embedding_model,
             instrumentation=resolved_tracing.instrumentation,
+            tracing=resolved_tracing,
         ) as runtime:
             readiness_probe.bind(runtime)
             app.state.application = runtime
@@ -120,10 +135,11 @@ def create_server_app(
         tracing=resolved_tracing,
         handoff_report_enabled=resolved.handoff_report.enabled,
     )
-    if resolved.dashboard.enabled:
+    if resolved.dashboard.enabled or resolved.handoff_report.enabled:
         mount_web_ui(
             app,
             scopes={scope.scope_id: scope.display_name for scope in resolved.dashboard.scopes},
+            dashboard_enabled=resolved.dashboard.enabled,
             handoff_report_enabled=resolved.handoff_report.enabled,
         )
     if metrics is not None:
@@ -162,8 +178,9 @@ def create_server_app(
 
 
 class _ServerReadinessProbe:
-    def __init__(self, metrics: ServerMetrics | None) -> None:
+    def __init__(self, metrics: ServerMetrics | None, *, tracing: ServerTracing) -> None:
         self._metrics = metrics
+        self._tracing = tracing
         self._runtime: BuiltinRuntime | None = None
         self._last_status: ReadinessStatus | None = None
 
@@ -177,14 +194,15 @@ class _ServerReadinessProbe:
             self._metrics.set_ready(False)
 
     async def __call__(self) -> ReadinessResponse:
-        runtime = self._runtime
-        if runtime is None:
-            response = ReadinessResponse(
-                status=ReadinessStatus.NOT_READY,
-                checks={"runtime": "not_ready"},
-            )
-        else:
-            response = await self._check(runtime)
+        with self._tracing._suppress_readiness_spans():
+            runtime = self._runtime
+            if runtime is None:
+                response = ReadinessResponse(
+                    status=ReadinessStatus.NOT_READY,
+                    checks={"runtime": "not_ready"},
+                )
+            else:
+                response = await self._check(runtime)
         self._observe(response.status)
         return response
 

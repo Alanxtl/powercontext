@@ -1,3 +1,17 @@
+# Copyright (c) 2026 OceanBase.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Server-owned HTML pages and their supporting endpoints."""
 
 from __future__ import annotations
@@ -34,12 +48,13 @@ def mount_web_ui(
     app: FastAPI,
     *,
     scopes: Mapping[str, str],
+    dashboard_enabled: bool = False,
     handoff_report_enabled: bool = False,
 ) -> None:
     """Mount Server-owned pages, static assets, and UI support endpoints."""
 
     dashboard_scopes = tuple(DashboardScope(scope_id=scope_id, display_name=name) for scope_id, name in scopes.items())
-    if not dashboard_scopes:
+    if dashboard_enabled and not dashboard_scopes:
         raise ValueError("Dashboard requires at least one scope")  # noqa: TRY003
 
     router = APIRouter(include_in_schema=False)
@@ -50,7 +65,9 @@ def mount_web_ui(
             name="pages/dashboard.html",
             context={
                 "active_page": "dashboard",
+                "dashboard_enabled": True,
                 "handoff_report_enabled": handoff_report_enabled,
+                "home_route": "dashboard_home",
             },
             headers=_PAGE_HEADERS,
         )
@@ -61,7 +78,9 @@ def mount_web_ui(
             name="pages/handoff_report.html",
             context={
                 "active_page": "handoff_report",
+                "dashboard_enabled": dashboard_enabled,
                 "handoff_report_enabled": True,
+                "home_route": "dashboard_home" if dashboard_enabled else "handoff_report_dashboard",
             },
             headers=_PAGE_HEADERS,
         )
@@ -70,20 +89,21 @@ def mount_web_ui(
         response.headers["Cache-Control"] = "no-store"
         return dashboard_scopes
 
-    router.add_api_route(
-        "/",
-        dashboard_page,
-        methods=["GET"],
-        response_class=HTMLResponse,
-        name="dashboard_home",
-    )
-    router.add_api_route(
-        "/dashboard/scopes",
-        list_dashboard_scopes,
-        methods=["GET"],
-        response_model=list[DashboardScope],
-        name="dashboard_scopes",
-    )
+    if dashboard_enabled:
+        router.add_api_route(
+            "/",
+            dashboard_page,
+            methods=["GET"],
+            response_class=HTMLResponse,
+            name="dashboard_home",
+        )
+        router.add_api_route(
+            "/dashboard/scopes",
+            list_dashboard_scopes,
+            methods=["GET"],
+            response_model=list[DashboardScope],
+            name="dashboard_scopes",
+        )
     if handoff_report_enabled:
         router.add_api_route(
             "/handoff-reports",
