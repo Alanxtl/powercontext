@@ -111,6 +111,10 @@ class SetupError(RuntimeError):
         return cls(f"Cannot install PowerContext Hermes plugin at {path}: {error}")
 
     @classmethod
+    def unsupported_hermes_version(cls, actual: str, minimum: str) -> SetupError:
+        return cls(f"Hermes Agent v{actual} is unsupported; PowerContext requires Hermes Agent v{minimum} or newer.")
+
+    @classmethod
     def data_directory(cls, path: Path, error: OSError) -> SetupError:
         return cls(f"Cannot create PowerContext data directory {path}: {error}")
 

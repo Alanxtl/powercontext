@@ -16,9 +16,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
+import re
 import shutil
 import subprocess
+import tempfile
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from shutil import which
@@ -29,6 +33,8 @@ from powercontext.paths import powercontext_data_dir
 HERMES_HOME_ENV = "HERMES_HOME"
 HERMES_PLUGIN_RELATIVE = Path("integrations") / "hermes" / "plugins" / "powercontext"
 HERMES_PLUGIN_NAME = "powercontext"
+HERMES_MIN_VERSION = (0, 20, 4)
+_HERMES_VERSION_PATTERN = re.compile(r"Hermes Agent v?(\d+)\.(\d+)\.(\d+)")
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,7 +48,8 @@ class HermesSetupResult:
 def install_hermes_plugin(*, source: str, ref: str) -> HermesSetupResult:
     """Install the PowerContext provider into Hermes' user plugin directory."""
 
-    hermes_executable()
+    executable = hermes_executable()
+    get_hermes_version(executable)
     data_dir = powercontext_data_dir()
     try:
         data_dir.mkdir(parents=True, exist_ok=True)
@@ -54,7 +61,15 @@ def install_hermes_plugin(*, source: str, ref: str) -> HermesSetupResult:
     target = home / "plugins" / HERMES_PLUGIN_NAME
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(plugin_dir, target, dirs_exist_ok=True)
+        staging = _new_staging_directory(target)
+        try:
+            shutil.rmtree(staging)
+            shutil.copytree(plugin_dir, staging)
+            _run_plugin_doctor(executable, staging)
+            _replace_directory(staging, target)
+        except BaseException:
+            _remove_path(staging)
+            raise
     except OSError as error:
         raise SetupError.hermes_plugin_write(target, error) from error
 
@@ -102,16 +117,40 @@ def run_hermes_diagnostics() -> dict[str, Diagnostic]:
             ),
         }
 
-    plugin = hermes_home() / "plugins" / HERMES_PLUGIN_NAME
-    installed = _is_hermes_plugin(plugin)
-    return {
-        "hermes": Diagnostic(status=DiagnosticStatus.OK, detail=executable),
-        "plugin": Diagnostic(
-            status=DiagnosticStatus.OK if installed else DiagnosticStatus.FAILED,
-            detail=(
-                f"{HERMES_PLUGIN_NAME} is installed" if installed else "PowerContext Hermes plugin is not installed"
+    try:
+        hermes_version = get_hermes_version(executable)
+    except SetupError as error:
+        return {
+            "hermes": Diagnostic(status=DiagnosticStatus.FAILED, detail=str(error)),
+            "plugin": Diagnostic(
+                status=DiagnosticStatus.SKIPPED,
+                detail="not checked because Hermes version validation failed",
             ),
-        ),
+        }
+
+    plugin = hermes_home() / "plugins" / HERMES_PLUGIN_NAME
+    if not _is_hermes_plugin(plugin):
+        return {
+            "hermes": Diagnostic(status=DiagnosticStatus.OK, detail=f"{executable} (Hermes Agent v{hermes_version})"),
+            "plugin": Diagnostic(
+                status=DiagnosticStatus.FAILED,
+                detail="PowerContext Hermes plugin is not installed",
+            ),
+        }
+
+    try:
+        _run_plugin_doctor(executable, plugin)
+    except SetupError as error:
+        plugin_diagnostic = Diagnostic(status=DiagnosticStatus.FAILED, detail=str(error))
+    else:
+        plugin_diagnostic = Diagnostic(
+            status=DiagnosticStatus.OK,
+            detail="powercontext passed Hermes plugin doctor",
+        )
+
+    return {
+        "hermes": Diagnostic(status=DiagnosticStatus.OK, detail=f"{executable} (Hermes Agent v{hermes_version})"),
+        "plugin": plugin_diagnostic,
     }
 
 
@@ -131,13 +170,14 @@ def hermes_executable() -> str:
     return executable
 
 
-def checkout_target(ref: str) -> Path:
-    """Resolve a Git ref to a directory under PowerContext's Hermes cache."""
+def checkout_target(source: str, ref: str) -> Path:
+    """Resolve a source and Git ref to a directory under the Hermes cache."""
 
     root = (powercontext_data_dir() / "checkouts" / "hermes").resolve()
     if not ref or ref in {".", ".."} or "\x00" in ref:
         raise SetupError.invalid_hermes_ref(ref)
-    target = (root / ref).resolve()
+    source_key = _source_cache_key(source)
+    target = (root / source_key / ref).resolve()
     try:
         target.relative_to(root)
     except ValueError as error:
@@ -174,13 +214,16 @@ def _usable_checkout(target: Path) -> bool:
 
 
 def _materialize_remote_checkout(source: str, ref: str) -> Path:
-    target = checkout_target(ref)
-    if _usable_checkout(target):
-        return target
-    if target.exists():
-        shutil.rmtree(target)
+    target = checkout_target(source, ref)
     target.parent.mkdir(parents=True, exist_ok=True)
-    _clone_github_source(source, ref, target)
+    staging = _new_staging_directory(target)
+    shutil.rmtree(staging)
+    try:
+        _clone_github_source(source, ref, staging)
+        _replace_directory(staging, target)
+    except BaseException:
+        _remove_path(staging)
+        raise
     return target
 
 
@@ -201,10 +244,87 @@ def _clone_github_source(source: str, ref: str, target: Path) -> None:
         raise SetupError.command_failed(command, detail)
 
 
+def get_hermes_version(executable: str | None = None) -> str:
+    """Return the Hermes version and reject versions below the supported minimum."""
+
+    executable = executable or hermes_executable()
+    command = [executable, "--version"]
+    completed = _run_hermes_command(command)
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip() or f"exit code {completed.returncode}"
+        raise SetupError.command_failed(command, detail)
+    match = _HERMES_VERSION_PATTERN.search(f"{completed.stdout}\n{completed.stderr}")
+    if match is None:
+        raise SetupError.invalid_command_output(command, "an unrecognized Hermes version")
+    parsed = tuple(int(part) for part in match.groups())
+    if parsed < HERMES_MIN_VERSION:
+        actual = ".".join(str(part) for part in parsed)
+        minimum = ".".join(str(part) for part in HERMES_MIN_VERSION)
+        raise SetupError.unsupported_hermes_version(actual, minimum)
+    return ".".join(str(part) for part in parsed)
+
+
+def _run_plugin_doctor(executable: str, plugin: Path) -> None:
+    command = [executable, "plugins", "doctor", "--ci", str(plugin)]
+    completed = _run_hermes_command(command)
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip() or f"exit code {completed.returncode}"
+        raise SetupError.command_failed(command, detail)
+
+
+def _run_hermes_command(command: list[str]) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(  # noqa: S603 - the executable and arguments are controlled by this CLI.
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise SetupError.command_unavailable(command, error) from error
+
+
+def _source_cache_key(source: str) -> str:
+    normalized = github_clone_url(source)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+
+
+def _new_staging_directory(target: Path) -> Path:
+    return Path(tempfile.mkdtemp(prefix=f".{target.name}-", dir=target.parent))
+
+
+def _replace_directory(staging: Path, target: Path) -> None:
+    backup = target.with_name(f".{target.name}.backup-{uuid.uuid4().hex}")
+    moved_old = False
+    try:
+        if target.exists() or target.is_symlink():
+            os.replace(target, backup)
+            moved_old = True
+        os.replace(staging, target)
+    except BaseException:
+        if moved_old and not (target.exists() or target.is_symlink()) and backup.exists():
+            os.replace(backup, target)
+        raise
+    finally:
+        _remove_path(staging)
+        _remove_path(backup)
+
+
+def _remove_path(path: Path) -> None:
+    if path.is_symlink() or path.is_file():
+        path.unlink(missing_ok=True)
+    elif path.is_dir():
+        shutil.rmtree(path)
+
+
 __all__ = [
     "HERMES_PLUGIN_NAME",
     "HermesSetupResult",
     "checkout_target",
+    "get_hermes_version",
     "github_clone_url",
     "hermes_executable",
     "hermes_home",
