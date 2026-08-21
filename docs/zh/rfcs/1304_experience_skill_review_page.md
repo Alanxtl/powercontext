@@ -1,6 +1,6 @@
 - Proposal Name: `experience_skill_review_page`
 - Start Date: 2026-08-20
-- RFC PR: [oceanbase/powercontext#0000](https://github.com/oceanbase/powercontext/pull/0000)
+- RFC PR: [oceanbase/powercontext#1304](https://github.com/oceanbase/powercontext/pull/1304)
 - Related RFCs: [RFC 0050](0050_artifact_candidate_review_inbox.md)、
   [RFC 0051](0051_experience_skill_artifact_families.md)、
   [RFC 0072](0072_scoped_statistics_and_usage.md)
