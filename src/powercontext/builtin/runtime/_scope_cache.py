@@ -81,10 +81,9 @@ class ScopeCache:
     def counts(self) -> ScopeCacheCounts:
         """Return cached and active scope counts without scope identifiers."""
 
-        return ScopeCacheCounts(
-            cached=len(self._entries),
-            active=sum(entry.leases > 0 for entry in self._entries.values()),
-        )
+        inactive = sum(entry.leases == 0 for entry in self._entries.values())
+        active = sum(entry.leases > 0 for entry in self._entries.values())
+        return ScopeCacheCounts(cached=inactive, active=active)
 
     def clear(self) -> None:
         """Evict all entries after the Runtime has drained its operations."""
