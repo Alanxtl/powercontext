@@ -1,3 +1,17 @@
+# Copyright (c) 2026 OceanBase.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 from __future__ import annotations
 
 import asyncio
@@ -62,7 +76,7 @@ def test_scope_cache_does_not_evict_a_lock_with_holders_or_waiters() -> None:
 
         def observe(cached: int, active: int) -> None:
             nonlocal same_scope_leases
-            if cached == 1 and active == 1:
+            if cached == 0 and active == 1:
                 same_scope_leases += 1
                 if same_scope_leases == 2:
                     both_same_scope_operations_started.set()
@@ -78,9 +92,9 @@ def test_scope_cache_does_not_evict_a_lock_with_holders_or_waiters() -> None:
         request = _proposal()
         same = runtime.experience.for_scope("same")
         first = asyncio.create_task(same.propose(request))
-        await services["same"].started.wait()
+        await asyncio.wait_for(services["same"].started.wait(), timeout=5)
         second = asyncio.create_task(same.propose(request))
-        await both_same_scope_operations_started.wait()
+        await asyncio.wait_for(both_same_scope_operations_started.wait(), timeout=5)
 
         await runtime.experience.for_scope("other").propose(request)
         assert evicted == ["other"]

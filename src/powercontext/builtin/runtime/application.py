@@ -1422,11 +1422,12 @@ class BuiltinRuntime:
 
     def _lock(self, scope_id: str) -> asyncio.Lock:
         return self._scope_cache.lock(validate_scope_id(scope_id))
+
     @asynccontextmanager
     async def _locked(self, scope_id: str) -> AsyncIterator[None]:
         """Serialize writes for one scope and trace only the wait, not the critical section."""
 
-        lock = self._locks.setdefault(validate_scope_id(scope_id), asyncio.Lock())
+        lock = self._lock(scope_id)
         acquired = False
         try:
             # Injected tracing must never leak the lock, so the release is armed before the stage is closed.
