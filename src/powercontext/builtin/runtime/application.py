@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from powercontext._logging import log_safely
 from powercontext.artifacts import ArtifactRef
@@ -48,6 +48,12 @@ from powercontext.builtin.inference.models import InferenceUsage
 from powercontext.builtin.inference.usage import bind_usage_reporter
 from powercontext.builtin.review.generation import GeneratedCandidateResult, ReviewedGenerationService
 from powercontext.builtin.review.service import ReviewService
+from powercontext.builtin.runtime._scope_cache import (
+    DEFAULT_SCOPE_CACHE_SIZE,
+    ScopeCache,
+    ScopeCacheObserver,
+    ScopeEvictor,
+)
 from powercontext.builtin.runtime.errors import InvalidRuntimeRequestError
 from powercontext.builtin.runtime.models import (
     ApproveArtifactCandidateRequest,
@@ -185,7 +191,7 @@ class ScopedStatisticsApplication:
         self.scope_id = validate_scope_id(scope_id)
 
     async def overview(self, *, period: StatisticsPeriod = StatisticsPeriod.THIRTY_DAYS) -> Statistics:
-        async with self._runtime._operation():
+        async with self._runtime._scope_operation(self.scope_id):
             return await self._runtime._statistics(self.scope_id).overview(period, self._runtime._clock())
 
     async def record_model_usage(
@@ -196,12 +202,13 @@ class ScopedStatisticsApplication:
         /,
     ) -> None:
         try:
-            await self._runtime._statistics(self.scope_id).record(
-                purpose,
-                operation,
-                usage,
-                self._runtime._clock().astimezone(UTC).date(),
-            )
+            async with self._runtime._scope_operation(self.scope_id):
+                await self._runtime._statistics(self.scope_id).record(
+                    purpose,
+                    operation,
+                    usage,
+                    self._runtime._clock().astimezone(UTC).date(),
+                )
         except Exception as error:
             log_safely(
                 logger,
@@ -219,10 +226,11 @@ class ScopedStatisticsApplication:
 
     async def record_recall(self, measurement: RecallTokenMeasurement, /) -> None:
         try:
-            await self._runtime._statistics(self.scope_id).record_recall(
-                measurement,
-                self._runtime._clock().astimezone(UTC).date(),
-            )
+            async with self._runtime._scope_operation(self.scope_id):
+                await self._runtime._statistics(self.scope_id).record_recall(
+                    measurement,
+                    self._runtime._clock().astimezone(UTC).date(),
+                )
         except Exception as error:
             log_safely(
                 logger,
@@ -256,6 +264,10 @@ class ScopedContextApplication:
         self.scope_id = validate_scope_id(scope_id)
 
     async def prepare(self, request: PrepareContextRequest, /) -> PreparedContext:
+        async with self._runtime._scope_operation(self.scope_id):
+            return await self._prepare(request)
+
+    async def _prepare(self, request: PrepareContextRequest, /) -> PreparedContext:
         builder = PreparedContextBuilder()
         async with (
             self._runtime._context(self.scope_id, embedding_purpose=ModelUsagePurpose.MEMORY_RECALL) as context,
@@ -903,6 +915,9 @@ class BuiltinRuntime:
         provider: PowerContextProvider[BuiltinSources, BuiltinArtifacts, BuiltinTriggers],
         capabilities: RuntimeCapabilities,
         source_window_limit: int = 100,
+        scope_cache_size: int = DEFAULT_SCOPE_CACHE_SIZE,
+        scope_evictor: ScopeEvictor | None = None,
+        scope_cache_observer: ScopeCacheObserver | None = None,
         scope_ids: ScopeIds | None = None,
         review_service: ReviewServiceFactory | None = None,
         generation_service: GenerationServiceFactory | None = None,
@@ -917,6 +932,8 @@ class BuiltinRuntime:
     ) -> None:
         if source_window_limit < 1:
             raise _RuntimeConfigurationError("source_window_limit")
+        if scope_cache_size < 1:
+            raise _RuntimeConfigurationError("scope_cache_size")
         self._provider = provider
         self._capabilities = capabilities
         self._review_service = review_service
@@ -930,11 +947,16 @@ class BuiltinRuntime:
         self._readiness = RuntimeReadinessChecks() if readiness is None else readiness
         self._clock = _utc_now if clock is None else clock
         self.source_window_limit = source_window_limit
-        self._locks: dict[str, asyncio.Lock] = {}
+        self._scope_cache = ScopeCache(
+            scope_cache_size,
+            evictor=scope_evictor,
+            observer=scope_cache_observer,
+        )
         self._processor_lock = asyncio.Lock()
         self._close_lock = asyncio.Lock()
         self._lifecycle = asyncio.Condition()
         self._active_operations = 0
+        self._operation_depths: dict[asyncio.Task[Any], int] = {}
         self._closing = False
         self._closed = False
         self._scheduler: AsyncIOScheduler | None = None
@@ -1063,21 +1085,40 @@ class BuiltinRuntime:
                     unregister_processor(self._scheduler_runtime_key)
                     self._scheduler_runtime_key = None
                 self._scheduler = None
+            self._scope_cache.clear()
             self._closed = True
 
     @asynccontextmanager
     async def _operation(self) -> AsyncIterator[None]:
+        task = asyncio.current_task()
+        if task is None:
+            raise RuntimeError("Runtime operations require an asyncio Task")  # noqa: TRY003
         async with self._lifecycle:
-            if self._closing or self._closed:
-                raise _RuntimeStateError("closed")
-            self._active_operations += 1
+            depth = self._operation_depths.get(task, 0)
+            if depth == 0:
+                if self._closing or self._closed:
+                    raise _RuntimeStateError("closed")
+                self._active_operations += 1
+            self._operation_depths[task] = depth + 1
         try:
             yield
         finally:
             async with self._lifecycle:
-                self._active_operations -= 1
-                if self._active_operations == 0:
-                    self._lifecycle.notify_all()
+                depth = self._operation_depths[task] - 1
+                if depth > 0:
+                    self._operation_depths[task] = depth
+                else:
+                    del self._operation_depths[task]
+                    self._active_operations -= 1
+                    if self._active_operations == 0:
+                        self._lifecycle.notify_all()
+
+    @asynccontextmanager
+    async def _scope_operation(self, scope_id: str) -> AsyncIterator[None]:
+        scope = validate_scope_id(scope_id)
+        async with self._operation():
+            with self._scope_cache.lease(scope):
+                yield
 
     @asynccontextmanager
     async def _scoped_operation(
@@ -1088,7 +1129,7 @@ class BuiltinRuntime:
         embedding_purpose: ModelUsagePurpose | None = None,
     ) -> AsyncIterator[None]:
         scope = validate_scope_id(scope_id)
-        async with self._operation():
+        async with self._scope_operation(scope):
             with bind_usage_reporter(
                 self.statistics.for_scope(scope).record_model_usage,
                 generation_purpose=generation_purpose,
@@ -1112,7 +1153,7 @@ class BuiltinRuntime:
             yield await self._provider.get(validate_scope_id(scope_id))
 
     def _lock(self, scope_id: str) -> asyncio.Lock:
-        return self._locks.setdefault(validate_scope_id(scope_id), asyncio.Lock())
+        return self._scope_cache.lock(validate_scope_id(scope_id))
 
     def _review(self, scope_id: str) -> ReviewService:
         if self._review_service is None:

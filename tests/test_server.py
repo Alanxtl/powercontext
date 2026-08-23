@@ -75,6 +75,7 @@ def test_settings_load_server_environment(monkeypatch) -> None:
         "POWERCONTEXT_SERVER_DATABASE_URL",
         "sqlite+aiosqlite:////var/lib/powercontext/test.db",
     )
+    monkeypatch.setenv("POWERCONTEXT_SERVER_RUNTIME_SCOPE_CACHE_SIZE", "64")
     monkeypatch.setenv("POWERCONTEXT_SERVER_RUNTIME_SOURCE_WINDOW_LIMIT", "25")
     monkeypatch.setenv("POWERCONTEXT_SERVER_RUNTIME_MEMORY_EXTRACTION_PROFILE", "conversation")
     monkeypatch.setenv("POWERCONTEXT_SERVER_RUNTIME_MEMORY_RERANK_ENABLED", "true")
@@ -98,6 +99,7 @@ def test_settings_load_server_environment(monkeypatch) -> None:
     assert settings.http.host == "127.0.0.2"
     assert settings.http.port == 9000
     assert settings.database.url == "sqlite+aiosqlite:////var/lib/powercontext/test.db"
+    assert settings.runtime.scope_cache_size == 64
     assert settings.runtime.source_window_limit == 25
     assert settings.runtime.memory_extraction_profile is MemoryExtractionProfile.CONVERSATION
     assert settings.runtime.memory_rerank_enabled is True

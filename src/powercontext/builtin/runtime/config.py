@@ -11,11 +11,13 @@ from powercontext.builtin.artifacts.memory.prompts import MemoryExtractionProfil
 from powercontext.builtin.artifacts.skill import CodexSkillRoot
 from powercontext.builtin.persistence.oceanbase import OceanBaseConfig
 from powercontext.builtin.persistence.sqlite import SQLiteConfig
+from powercontext.builtin.runtime._scope_cache import DEFAULT_SCOPE_CACHE_SIZE
 
 
 class RuntimeConfig(BaseModel):
     """Built-in runtime policy and scheduler configuration."""
 
+    scope_cache_size: int = Field(default=DEFAULT_SCOPE_CACHE_SIZE, ge=1)
     source_window_limit: int = Field(default=100, ge=1)
     memory_extraction_profile: MemoryExtractionProfile = MemoryExtractionProfile.CODING
     memory_rerank_enabled: bool = False

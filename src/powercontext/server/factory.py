@@ -80,6 +80,7 @@ def create_server_app(
             handoff_pipeline=handoff_pipeline,
             embedding_model=embedding_model,
             instrumentation=resolved_tracing.instrumentation,
+            scope_cache_observer=None if metrics is None else metrics.set_runtime_scopes,
         ) as runtime:
             readiness_probe.bind(runtime)
             app.state.application = runtime
