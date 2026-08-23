@@ -35,6 +35,8 @@ Server settings use the `POWERCONTEXT_SERVER_` prefix.
 | `POWERCONTEXT_SERVER_MCP_PATH` | `/mcp` | MCP path |
 | `POWERCONTEXT_SERVER_AUTH_ENABLED` | `false` | Require one static bearer token for HTTP and MCP |
 | `POWERCONTEXT_SERVER_AUTH_TOKEN` | unset | Static bearer token; required when authentication is enabled |
+| `POWERCONTEXT_SERVER_DASHBOARD_ENABLED` | `true` | Enable the Dashboard at the Server root path `/` |
+| `POWERCONTEXT_SERVER_DASHBOARD_SCOPES` | `[]` | JSON array of selectable Dashboard scopes |
 | `POWERCONTEXT_SERVER_LOGGING_LEVEL` | `INFO` | Operational log level |
 | `POWERCONTEXT_SERVER_LOGGING_FORMAT` | `console` | `console` or structured `json` output |
 | `POWERCONTEXT_SERVER_LOGGING_ACCESS` | `true` | Log external HTTP and logical MCP request completion |
@@ -56,6 +58,10 @@ Server settings use the `POWERCONTEXT_SERVER_` prefix.
 Static bearer authentication is disabled by default. When enabled, API and MCP requests must include
 `Authorization: Bearer <token>`; the liveness and readiness endpoints remain public. Plain HTTP should remain on a
 loopback address. Use TLS before exposing an authenticated Server over a network.
+
+The Dashboard is enabled by default and shares the Server listener and port with the HTTP API and MCP. With no scopes
+configured, the page shows an empty state. Dashboard initialization failures are logged with their direct cause and do
+not prevent the Server HTTP API, MCP, or health checks from starting.
 
 Example with a controlled SQLite path and scheduled extraction:
 
@@ -184,6 +190,7 @@ set its path together with the complete embedding profile:
 export POWERCONTEXT_SERVER_INFERENCE_EMBEDDING_MODEL=provider:embedding-model
 export POWERCONTEXT_SERVER_INFERENCE_EMBEDDING_PROFILE_ID=embedding-model-v1
 export POWERCONTEXT_SERVER_INFERENCE_EMBEDDING_DIMENSION=1024
+export POWERCONTEXT_SERVER_DATABASE_URL=sqlite+aiosqlite:////srv/powercontext/powercontext.db
 export POWERCONTEXT_SERVER_DATABASE_VEC1_EXTENSION=/opt/sqlite-extensions/vec1
 powercontext server run
 ```
@@ -226,3 +233,54 @@ only through the environment so it does not appear in command-line arguments.
 The outer Codex hook timeout is ten seconds. Recall, capture, and flush fail independently and never block Codex when
 the Server is unavailable or rejects authentication. The variable must be present in the environment that starts
 Codex; restart Codex after changing it.
+
+## Claude Code plugin
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `POWERCONTEXT_CLAUDE_SERVER_URL` | `http://127.0.0.1:8000` | Server base URL used by the Hook |
+| `POWERCONTEXT_CLAUDE_SCOPE_ID` | derived from Git remote or project path | Override project scope |
+| `POWERCONTEXT_CLAUDE_AUTHORIZATION` | unset | Complete `Bearer <token>` header for Hook and MCP requests |
+| `POWERCONTEXT_CLAUDE_CAPTURE_PROMPTS` | `true` | Capture user prompts as ordinary Source evidence |
+| `POWERCONTEXT_CLAUDE_FLUSH_ON_CAPTURE` | `false` | Wait for Source processing after capture |
+| `POWERCONTEXT_CLAUDE_REQUEST_TIMEOUT_SECONDS` | `1` | Per-request Hook timeout |
+| `POWERCONTEXT_CLAUDE_HTTP_BUDGET_SECONDS` | `4` | Shared Hook HTTP budget for recall, capture, and optional flush |
+| `POWERCONTEXT_CLAUDE_FLUSH_MAX_CALLS` | `4` | Maximum flush calls per prompt; valid values are 1 through 16 |
+
+`powercontext setup claude-code` stores `server_url` and `capture_prompts` as non-sensitive Claude Code plugin
+options. The corresponding `POWERCONTEXT_CLAUDE_*` variables take precedence for the process that starts Claude Code.
+Authorization is environment-only and must not be added to the Server URL or plugin options.
+
+The outer `UserPromptSubmit` Hook timeout is ten seconds. Recall and capture use one shared wall-clock budget but fail
+independently. Plain HTTP is accepted only for loopback endpoints; use HTTPS for a remote Server. Restart Claude Code
+after changing its environment.
+
+## DeepSeek Harness plugin
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `POWERCONTEXT_DSH_BASE_URL` | `http://127.0.0.1:8000` | Server base URL used by the plugin |
+| `POWERCONTEXT_DSH_SCOPE_ID` | derived from Git remote or project path | Override project scope |
+| `POWERCONTEXT_DSH_AUTHORIZATION` | unset | Complete `Bearer <token>` header for plugin HTTP requests |
+| `POWERCONTEXT_DSH_CAPTURE_PROMPTS` | `true` | Capture user prompts as Source evidence |
+| `POWERCONTEXT_DSH_FLUSH_ON_CAPTURE` | `false` | Wait for Source processing after capture |
+
+`timeoutMs`, `requestTimeoutMs`, `maxBytes`, and `flushMaxCalls` are plugin patch settings. Server unavailability fails open for recall and capture; restart `dsh web` after changing these variables.
+
+## Pi package
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `POWERCONTEXT_PI_BASE_URL` | `http://127.0.0.1:8000` | Server base URL; non-loopback endpoints must use HTTPS |
+| `POWERCONTEXT_PI_SCOPE_ID` | derived from Git remote or project path | Override project scope |
+| `POWERCONTEXT_PI_AUTHORIZATION` | unset | Complete `Bearer <token>` header for package HTTP requests |
+| `POWERCONTEXT_PI_CAPTURE_PROMPTS` | `true` | Capture eligible user prompts as Source evidence |
+| `POWERCONTEXT_PI_REQUEST_TIMEOUT_MS` | `1000` | Per-request timeout in milliseconds |
+| `POWERCONTEXT_PI_HTTP_BUDGET_MS` | `4000` | Shared recall/capture HTTP budget in milliseconds |
+| `POWERCONTEXT_PI_MAX_BYTES` | `8000` | Requested and validated PreparedContext byte limit (`512`–`32768`) |
+| `POWERCONTEXT_PI_FLUSH_ON_CAPTURE` | `false` | Wait for captured Source processing during the prompt hook |
+| `POWERCONTEXT_PI_FLUSH_MAX_CALLS` | `4` | Maximum flush attempts for one pending Source |
+
+Pi rejects base URLs containing credentials, a query, or a fragment. Recall, capture, and boundary flushing fail open;
+explicit `pc_*` durable writes require confirmation and are refused when Pi has no interactive UI. Restart Pi after
+changing these variables.

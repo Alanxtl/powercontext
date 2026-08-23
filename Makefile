@@ -41,7 +41,7 @@ real-e2e-test: ## Run opt-in real Codex Experience/Skill tests; REAL_E2E_MODE de
 
 .PHONY: harness-sync
 harness-sync: ## Install the Bub replay harness environment.
-	@uv sync --project e2e/bub
+	@uv sync --project e2e/bub --locked
 
 .PHONY: harness-check
 harness-check: ## Validate the Bub replay harness and committed scenarios.
@@ -76,8 +76,8 @@ harness-compose-down: ## Stop the selected isolated harness environment and remo
 	@e2e/bub/run.sh down
 
 .PHONY: contract-test
-contract-test: api-generate-check ## Verify generated API code and contract bindings.
-	@uv run python -m pytest tests/test_api_contract.py
+contract-test: api-generate-check js-api-generate-check ## Verify generated API code and contract bindings.
+	@uv run python -m pytest tests/test_api_contract.py tests/test_js_operations.py
 
 .PHONY: api-generate
 api-generate: ## Generate API models and operations from OpenAPI.
@@ -86,6 +86,32 @@ api-generate: ## Generate API models and operations from OpenAPI.
 .PHONY: api-generate-check
 api-generate-check: ## Verify generated API code is current.
 	@uv run python scripts/generate_api.py --check
+
+.PHONY: js-api-generate
+js-api-generate: ## Generate the DeepSeek Harness operations table from OpenAPI.
+	@uv run python scripts/generate_js_operations.py
+
+.PHONY: js-api-generate-check
+js-api-generate-check: ## Verify generated JS operations are current.
+	@uv run python scripts/generate_js_operations.py --check
+
+.PHONY: js-test
+js-test: ## Run DeepSeek Harness plugin unit tests.
+	@pnpm --dir integrations/dsh/plugins/powercontext test
+
+.PHONY: openclaw-plugin-build
+openclaw-plugin-build: ## Build the external OpenClaw memory plugin.
+	@pnpm --dir integrations/openclaw/plugins/memory-powercontext build
+
+.PHONY: openclaw-plugin-pack
+openclaw-plugin-pack: ## Build and pack the external OpenClaw memory plugin.
+	@pnpm --dir integrations/openclaw/plugins/memory-powercontext pack:local
+
+.PHONY: pi-test
+pi-test: ## Install and test the Pi package.
+	@pnpm --dir integrations/pi/plugins/powercontext install --frozen-lockfile
+	@pnpm --dir integrations/pi/plugins/powercontext test
+	@pnpm --dir integrations/pi/plugins/powercontext run typecheck
 
 .PHONY: build
 build: clean-build ## Build wheel file
