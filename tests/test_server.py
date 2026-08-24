@@ -14,8 +14,10 @@
 
 import asyncio
 import logging
+import os
 import re
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import httpx
 import pytest
@@ -38,7 +40,6 @@ from powercontext.http import (
     ReadinessResponse,
     ReadinessStatus,
 )
-from powercontext.paths import sqlite_url
 from powercontext.server.app import create_app
 from powercontext.server.factory import create_server_app
 from powercontext.server.settings import BearerAuthConfig, McpConfig, ServerSettings
@@ -56,7 +57,7 @@ class _FailingEmbeddingModel:
         model="test:embedding",
         dimension=3,
         distance="l2",
-        normalization="none",
+        normalization="unit",
     )
 
     def __init__(self, error: Exception) -> None:
@@ -132,14 +133,22 @@ def test_settings_load_server_environment(monkeypatch) -> None:
     assert settings.external_skills.codex_roots[0].path.as_posix() == "/srv/project/.agents/skills"
 
 
-def test_server_settings_vec1_preserves_file_database(tmp_path, monkeypatch) -> None:
-    data_dir = tmp_path / "powercontext-data"
-    monkeypatch.setenv("POWERCONTEXT_HOME", str(data_dir))
-    monkeypatch.setenv("POWERCONTEXT_SERVER_DATABASE_VEC1_EXTENSION", str(tmp_path / "vec1"))
+def test_env_example_loads_server_settings(monkeypatch) -> None:
+    for name in tuple(os.environ):
+        if name.startswith("POWERCONTEXT_SERVER_"):
+            monkeypatch.delenv(name)
+
+    for line in Path(".env.example").read_text(encoding="utf-8").splitlines():
+        assignment = line.strip()
+        if not assignment or assignment.startswith("#"):
+            continue
+        name, value = assignment.split("=", maxsplit=1)
+        monkeypatch.setenv(name, value)
 
     settings = ServerSettings()
 
-    assert settings.database.url == sqlite_url(data_dir / "powercontext.db")
+    assert isinstance(settings.database, SQLiteConfig)
+    assert settings.inference.embedding_dimension == 2560
 
 
 def test_server_settings_select_oceanbase(monkeypatch) -> None:
