@@ -444,234 +444,307 @@ def get_tool_schemas() -> list[dict[str, Any]]:
 
     json_object = {"type": "object", "additionalProperties": True}
     json_array = {"type": "array", "items": json_object}
-    schemas.extend(
-        [
-            _operation_schema(
-                "powercontext_prepare_context",
-                "Prepare bounded context for a query using the current PowerContext scope.",
-                {"query": {"type": "string"}, "max_bytes": {"type": "integer", "minimum": 512, "maximum": 32768}},
-                ("query",),
-            ),
-            _operation_schema(
-                "powercontext_capture_source",
-                "Capture a source explicitly into PowerContext. Do not include secrets.",
-                {"source_id": {"type": "string"}, "content": {"type": "string"}, "metadata": json_object},
-                ("source_id", "content"),
-            ),
-            _operation_schema(
-                "powercontext_list_memory_entries",
-                "List memory entries in the current scope; inactive entries are for audit only.",
-                {"include_inactive": {"type": "boolean", "default": False}},
-            ),
-            _operation_schema(
-                "powercontext_revise_memory_entry",
-                "Revise one memory entry using its exact current citation.",
-                {
-                    "citation": json_object,
-                    "kind": {"type": "string"},
-                    "text": {"type": "string"},
-                    "reason": {"type": "string"},
-                },
-                ("citation", "kind", "text"),
-            ),
-            _operation_schema(
-                "powercontext_list_memory_changes",
-                "List memory changes after an optional artifact revision.",
-                {"since_revision": {"type": "integer", "minimum": 0}},
-            ),
-            _operation_schema("powercontext_flush_memory", "Flush captured sources into durable memory when extraction is supported."),
-            _operation_schema(
-                "powercontext_get_stats",
-                "Read PowerContext usage and memory statistics for the current scope.",
-                {"period": {"type": "string", "enum": ["today", "7d", "30d"]}},
-            ),
-            _operation_schema(
-                "powercontext_create_work_contract",
-                "Create a durable Work Contract for the current task.",
-                {"source_id": {"type": "string"}, "contract": json_object},
-                ("source_id", "contract"),
-            ),
-            _operation_schema(
-                "powercontext_handoff_current_work",
-                "Prepare a handoff record for the current work.",
-                {"source_id": {"type": "string"}, "handoff": json_object},
-                ("source_id", "handoff"),
-            ),
-            _operation_schema(
-                "powercontext_acknowledge_handoff",
-                "Record the receiving agent's acknowledgement of a handoff.",
-                {
-                    "source_id": {"type": "string"},
-                    "receiver": {"type": "string"},
-                    "status": {"type": "string"},
-                    "selection": {"type": "string", "enum": ["prepared", "exact"]},
-                    "receiver_checks": json_object,
-                    "prepared": json_object,
-                    "revision": json_object,
-                    "message": {"type": "string"},
-                },
-                ("source_id", "receiver", "status", "selection"),
-            ),
-            _operation_schema(
-                "powercontext_record_task_outcome",
-                "Record a structured outcome for the current task.",
-                {"source_id": {"type": "string"}, "outcome": json_object},
-                ("source_id", "outcome"),
-            ),
-            _operation_schema(
-                "powercontext_activate_handoff",
-                "Activate a handoff at a source boundary.",
-                {
-                    "boundary_source": json_object,
-                    "objective": {"type": "string"},
-                    "evidence": json_array,
-                    "max_bytes": {"type": "integer", "minimum": 512, "maximum": 32768},
-                },
-                ("boundary_source", "objective"),
-            ),
-            _operation_schema(
-                "powercontext_prepare_handoff",
-                "Prepare an inspectable handoff draft from exact evidence.",
-                {
-                    "objective": {"type": "string"},
-                    "evidence": json_array,
-                    "max_bytes": {"type": "integer", "minimum": 512, "maximum": 32768},
-                },
-                ("objective", "evidence"),
-            ),
-            _operation_schema("powercontext_finalize_handoff", "Finalize an inspected handoff draft.", {"draft": json_object}, ("draft",)),
-            _operation_schema("powercontext_commit_handoff", "Commit a prepared handoff as a durable milestone.", {"handoff": json_object}, ("handoff",)),
-            _operation_schema(
-                "powercontext_continue_handoff",
-                "Continue from a prepared or committed handoff.",
-                {
-                    "selection": {"type": "string", "enum": ["prepared", "exact", "latest"]},
-                    "prepared": json_object,
-                    "revision": json_object,
-                },
-                ("selection",),
-            ),
-            _operation_schema(
-                "powercontext_propose_experience",
-                "Propose an Experience artifact candidate for later human review.",
-                {
-                    "proposal": json_object,
-                    "source_refs": json_array,
-                    "artifact_refs": json_array,
-                    "target": json_object,
-                    "reason": {"type": "string"},
-                },
-                ("proposal", "source_refs", "artifact_refs"),
-            ),
-            _operation_schema(
-                "powercontext_generate_experience",
-                "Generate an Experience artifact candidate from exact references.",
-                {
-                    "source_refs": json_array,
-                    "artifact_refs": json_array,
-                    "target": json_object,
-                    "reason": {"type": "string"},
-                },
-                ("source_refs", "artifact_refs"),
-            ),
-            _operation_schema("powercontext_get_experience", "Read one Experience artifact by exact reference.", {"artifact": json_object}, ("artifact",)),
-            _operation_schema(
-                "powercontext_propose_skill",
-                "Propose a Skill artifact candidate for later human review.",
-                {
-                    "proposal": json_object,
-                    "source_refs": json_array,
-                    "artifact_refs": json_array,
-                    "target": json_object,
-                    "reason": {"type": "string"},
-                },
-                ("proposal", "source_refs", "artifact_refs"),
-            ),
-            _operation_schema(
-                "powercontext_generate_skill",
-                "Generate a Skill artifact candidate from exact references.",
-                {
-                    "origin": {"type": "string", "enum": ["experience", "source", "usage"]},
-                    "source_refs": json_array,
-                    "artifact_refs": json_array,
-                    "target": json_object,
-                    "reason": {"type": "string"},
-                },
-                ("origin", "source_refs", "artifact_refs"),
-            ),
-            _operation_schema("powercontext_get_skill", "Read one Skill artifact by exact reference.", {"artifact": json_object}, ("artifact",)),
-            _operation_schema("powercontext_scan_external_skills", "Scan configured external skill sources for available skills."),
-            _operation_schema(
-                "powercontext_list_external_skills",
-                "List discovered external skills.",
-                {"include_unavailable": {"type": "boolean", "default": False}},
-            ),
-            _operation_schema(
-                "powercontext_resolve_external_skill",
-                "Resolve one external skill by id and fingerprint.",
-                {"external_skill_id": {"type": "string"}, "fingerprint": {"type": "string"}},
-                ("external_skill_id", "fingerprint"),
-            ),
-            _operation_schema(
-                "powercontext_import_external_skill",
-                "Import one verified external skill into the current scope.",
-                {
-                    "external_skill_id": {"type": "string"},
-                    "fingerprint": {"type": "string"},
-                    "mode": {"type": "string", "enum": ["import", "fork"]},
-                    "reason": {"type": "string"},
-                },
-                ("external_skill_id", "fingerprint", "mode"),
-            ),
-            _operation_schema(
-                "powercontext_list_artifact_candidates",
-                "List Experience and Skill candidates awaiting review.",
-                {
-                    "status": {"type": "string", "enum": ["pending", "approved", "rejected"]},
-                    "family": {"type": "string", "enum": ["experience", "skill"]},
-                    "cursor": {"type": "string"},
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
-                },
-            ),
-            _operation_schema(
-                "powercontext_get_artifact_candidate",
-                "Read one artifact candidate without changing its state.",
-                {"candidate_id": {"type": "string"}},
-                ("candidate_id",),
-            ),
-            _operation_schema(
-                "powercontext_approve_artifact_candidate",
-                "Approve an artifact candidate after explicit user review.",
-                {"candidate_id": {"type": "string"}, "expected_version": {"type": "integer", "minimum": 1}},
-                ("candidate_id", "expected_version"),
-            ),
-            _operation_schema(
-                "powercontext_reject_artifact_candidate",
-                "Reject an artifact candidate after explicit user review.",
-                {
-                    "candidate_id": {"type": "string"},
-                    "expected_version": {"type": "integer", "minimum": 1},
-                    "reason": {"type": "string"},
-                },
-                ("candidate_id", "expected_version", "reason"),
-            ),
-            _operation_schema(
-                "powercontext_revise_artifact_candidate",
-                "Revise an artifact candidate while retaining its provenance.",
-                {
-                    "candidate_id": {"type": "string"},
-                    "expected_version": {"type": "integer", "minimum": 1},
-                    "proposal": json_object,
-                    "source_refs": json_array,
-                    "artifact_refs": json_array,
-                    "target": json_object,
-                    "reason": {"type": "string"},
-                },
-                ("candidate_id", "expected_version", "proposal", "source_refs", "artifact_refs"),
-            ),
-        ]
-    )
+    schemas.extend([
+        _operation_schema(
+            "powercontext_prepare_context",
+            "Prepare bounded context for a query using the current PowerContext scope.",
+            {"query": {"type": "string"}, "max_bytes": {"type": "integer", "minimum": 512, "maximum": 32768}},
+            ("query",),
+        ),
+        _operation_schema(
+            "powercontext_capture_source",
+            "Capture a source explicitly into PowerContext. Do not include secrets.",
+            {"source_id": {"type": "string"}, "content": {"type": "string"}, "metadata": json_object},
+            ("source_id", "content"),
+        ),
+        _operation_schema(
+            "powercontext_list_memory_entries",
+            "List memory entries in the current scope; inactive entries are for audit only.",
+            {"include_inactive": {"type": "boolean", "default": False}},
+        ),
+        _operation_schema(
+            "powercontext_revise_memory_entry",
+            "Revise one memory entry using its exact current citation.",
+            {
+                "citation": json_object,
+                "kind": {"type": "string"},
+                "text": {"type": "string"},
+                "reason": {"type": "string"},
+            },
+            ("citation", "kind", "text"),
+        ),
+        _operation_schema(
+            "powercontext_list_memory_changes",
+            "List memory changes after an optional artifact revision.",
+            {"since_revision": {"type": "integer", "minimum": 0}},
+        ),
+        _operation_schema(
+            "powercontext_flush_memory", "Flush captured sources into durable memory when extraction is supported."
+        ),
+        _operation_schema(
+            "powercontext_get_stats",
+            "Read PowerContext usage and memory statistics for the current scope.",
+            {"period": {"type": "string", "enum": ["today", "7d", "30d"]}},
+        ),
+        _operation_schema(
+            "powercontext_create_work_contract",
+            "Create a durable Work Contract for the current task.",
+            {"source_id": {"type": "string"}, "contract": json_object},
+            ("source_id", "contract"),
+        ),
+        _operation_schema(
+            "powercontext_handoff_current_work",
+            "Prepare a handoff record for the current work.",
+            {"source_id": {"type": "string"}, "handoff": json_object},
+            ("source_id", "handoff"),
+        ),
+        _operation_schema(
+            "powercontext_acknowledge_handoff",
+            "Record the receiving agent's acknowledgement of a handoff.",
+            {
+                "source_id": {"type": "string"},
+                "receiver": {"type": "string"},
+                "status": {"type": "string"},
+                "selection": {"type": "string", "enum": ["prepared", "exact"]},
+                "receiver_checks": json_object,
+                "prepared": json_object,
+                "revision": json_object,
+                "message": {"type": "string"},
+            },
+            ("source_id", "receiver", "status", "selection"),
+        ),
+        _operation_schema(
+            "powercontext_record_task_outcome",
+            "Record a structured outcome for the current task.",
+            {"source_id": {"type": "string"}, "outcome": json_object},
+            ("source_id", "outcome"),
+        ),
+        _operation_schema(
+            "powercontext_activate_handoff",
+            "Activate a handoff at a source boundary.",
+            {
+                "boundary_source": json_object,
+                "objective": {"type": "string"},
+                "evidence": json_array,
+                "max_bytes": {"type": "integer", "minimum": 512, "maximum": 32768},
+            },
+            ("boundary_source", "objective"),
+        ),
+        _operation_schema(
+            "powercontext_prepare_handoff",
+            "Prepare an inspectable handoff draft from exact evidence.",
+            {
+                "objective": {"type": "string"},
+                "evidence": json_array,
+                "max_bytes": {"type": "integer", "minimum": 512, "maximum": 32768},
+            },
+            ("objective", "evidence"),
+        ),
+        _operation_schema(
+            "powercontext_finalize_handoff", "Finalize an inspected handoff draft.", {"draft": json_object}, ("draft",)
+        ),
+        _operation_schema(
+            "powercontext_commit_handoff",
+            "Commit a prepared handoff as a durable milestone.",
+            {"handoff": json_object},
+            ("handoff",),
+        ),
+        _operation_schema(
+            "powercontext_continue_handoff",
+            "Continue from a prepared or committed handoff.",
+            {
+                "selection": {"type": "string", "enum": ["prepared", "exact", "latest"]},
+                "prepared": json_object,
+                "revision": json_object,
+            },
+            ("selection",),
+        ),
+        _operation_schema(
+            "powercontext_propose_experience",
+            "Propose an Experience artifact candidate for later human review.",
+            {
+                "proposal": json_object,
+                "source_refs": json_array,
+                "artifact_refs": json_array,
+                "target": json_object,
+                "reason": {"type": "string"},
+            },
+            ("proposal", "source_refs", "artifact_refs"),
+        ),
+        _operation_schema(
+            "powercontext_generate_experience",
+            "Generate an Experience artifact candidate from exact references.",
+            {
+                "source_refs": json_array,
+                "artifact_refs": json_array,
+                "target": json_object,
+                "reason": {"type": "string"},
+            },
+            ("source_refs", "artifact_refs"),
+        ),
+        _operation_schema(
+            "powercontext_get_experience",
+            "Read one Experience artifact by exact reference.",
+            {"artifact": json_object},
+            ("artifact",),
+        ),
+        _operation_schema(
+            "powercontext_propose_skill",
+            "Propose a Skill artifact candidate for later human review.",
+            {
+                "proposal": json_object,
+                "source_refs": json_array,
+                "artifact_refs": json_array,
+                "target": json_object,
+                "reason": {"type": "string"},
+            },
+            ("proposal", "source_refs", "artifact_refs"),
+        ),
+        _operation_schema(
+            "powercontext_generate_skill",
+            "Generate a Skill artifact candidate from exact references.",
+            {
+                "origin": {"type": "string", "enum": ["experience", "source", "usage"]},
+                "source_refs": json_array,
+                "artifact_refs": json_array,
+                "target": json_object,
+                "reason": {"type": "string"},
+            },
+            ("origin", "source_refs", "artifact_refs"),
+        ),
+        _operation_schema(
+            "powercontext_get_skill",
+            "Read one Skill artifact by exact reference.",
+            {"artifact": json_object},
+            ("artifact",),
+        ),
+        _operation_schema(
+            "powercontext_scan_external_skills", "Scan configured external skill sources for available skills."
+        ),
+        _operation_schema(
+            "powercontext_list_external_skills",
+            "List discovered external skills.",
+            {"include_unavailable": {"type": "boolean", "default": False}},
+        ),
+        _operation_schema(
+            "powercontext_resolve_external_skill",
+            "Resolve one external skill by id and fingerprint.",
+            {"external_skill_id": {"type": "string"}, "fingerprint": {"type": "string"}},
+            ("external_skill_id", "fingerprint"),
+        ),
+        _operation_schema(
+            "powercontext_import_external_skill",
+            "Import one verified external skill into the current scope.",
+            {
+                "external_skill_id": {"type": "string"},
+                "fingerprint": {"type": "string"},
+                "mode": {"type": "string", "enum": ["import", "fork"]},
+                "reason": {"type": "string"},
+            },
+            ("external_skill_id", "fingerprint", "mode"),
+        ),
+        _operation_schema(
+            "powercontext_list_artifact_candidates",
+            "List Experience and Skill candidates awaiting review.",
+            {
+                "status": {"type": "string", "enum": ["pending", "approved", "rejected"]},
+                "family": {"type": "string", "enum": ["experience", "skill"]},
+                "cursor": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+            },
+        ),
+        _operation_schema(
+            "powercontext_get_artifact_candidate",
+            "Read one artifact candidate without changing its state.",
+            {"candidate_id": {"type": "string"}},
+            ("candidate_id",),
+        ),
+        _operation_schema(
+            "powercontext_approve_artifact_candidate",
+            "Approve an artifact candidate after explicit user review.",
+            {"candidate_id": {"type": "string"}, "expected_version": {"type": "integer", "minimum": 1}},
+            ("candidate_id", "expected_version"),
+        ),
+        _operation_schema(
+            "powercontext_reject_artifact_candidate",
+            "Reject an artifact candidate after explicit user review.",
+            {
+                "candidate_id": {"type": "string"},
+                "expected_version": {"type": "integer", "minimum": 1},
+                "reason": {"type": "string"},
+            },
+            ("candidate_id", "expected_version", "reason"),
+        ),
+        _operation_schema(
+            "powercontext_revise_artifact_candidate",
+            "Revise an artifact candidate while retaining its provenance.",
+            {
+                "candidate_id": {"type": "string"},
+                "expected_version": {"type": "integer", "minimum": 1},
+                "proposal": json_object,
+                "source_refs": json_array,
+                "artifact_refs": json_array,
+                "target": json_object,
+                "reason": {"type": "string"},
+            },
+            ("candidate_id", "expected_version", "proposal", "source_refs", "artifact_refs"),
+        ),
+    ])
     return schemas
+
+
+def _search_memory_tool(provider: Any, args: dict[str, Any]) -> str:
+    query = str(args.get("query", "")).strip()
+    if not query:
+        return tool_error("query is required")
+    limit = as_int(args.get("limit", DEFAULT_RETRIEVAL_LIMIT), DEFAULT_RETRIEVAL_LIMIT, minimum=1, maximum=50)
+    mode = str(args.get("mode", "auto"))
+    if mode not in {"auto", "fts", "vector", "hybrid"}:
+        return tool_error("mode must be one of auto, fts, vector, hybrid")
+    result = provider._client.search_memory(provider._scope_id, query[:8192], limit=limit, mode=mode)
+    return json.dumps(result, ensure_ascii=False)
+
+
+def _get_memory_tool(provider: Any, args: dict[str, Any]) -> str:
+    citation = citation_from_args(args)
+    return json.dumps(provider._client.get_memory_entry(provider._scope_id, citation), ensure_ascii=False)
+
+
+def _remember_tool(provider: Any, args: dict[str, Any]) -> str:
+    kind = str(args.get("kind", "")).strip()
+    text = str(args.get("text", "")).strip()
+    if not kind or not text:
+        return tool_error("kind and text are required")
+    result = provider._client.remember_memory(
+        provider._scope_id,
+        kind=kind[:128],
+        text=text[:8192],
+        reason=str(args.get("reason", "")).strip() or None,
+    )
+    return json.dumps(result, ensure_ascii=False)
+
+
+def _retire_memory_tool(provider: Any, args: dict[str, Any]) -> str:
+    citation = citation_from_args(args)
+    result = provider._client.retire_memory_entry(
+        provider._scope_id,
+        citation,
+        reason=str(args.get("reason", "")).strip() or None,
+    )
+    return json.dumps(result, ensure_ascii=False)
+
+
+def _dispatch_tool_call(provider: Any, tool_name: str, args: dict[str, Any]) -> str:
+    if tool_name == "powercontext_search_memory":
+        return _search_memory_tool(provider, args)
+    if tool_name == "powercontext_get_memory":
+        return _get_memory_tool(provider, args)
+    if tool_name == "powercontext_remember":
+        return _remember_tool(provider, args)
+    if tool_name in OPERATION_TOOL_MAP:
+        result = request_operation(provider, OPERATION_TOOL_MAP[tool_name], args)
+        return json.dumps(result, ensure_ascii=False)
+    return _retire_memory_tool(provider, args)
 
 
 def handle_tool_call(provider: Any, tool_name: str, args: dict[str, Any], **kwargs: Any) -> str:
@@ -680,41 +753,7 @@ def handle_tool_call(provider: Any, tool_name: str, args: dict[str, Any], **kwar
     if not provider._client or not provider._scope_id:
         return tool_error("PowerContext is not initialized for this session.")
     try:
-        if tool_name == "powercontext_search_memory":
-            query = str(args.get("query", "")).strip()
-            if not query:
-                return tool_error("query is required")
-            limit = as_int(args.get("limit", DEFAULT_RETRIEVAL_LIMIT), DEFAULT_RETRIEVAL_LIMIT, minimum=1, maximum=50)
-            mode = str(args.get("mode", "auto"))
-            if mode not in {"auto", "fts", "vector", "hybrid"}:
-                return tool_error("mode must be one of auto, fts, vector, hybrid")
-            result = provider._client.search_memory(provider._scope_id, query[:8192], limit=limit, mode=mode)
-            return json.dumps(result, ensure_ascii=False)
-        if tool_name == "powercontext_get_memory":
-            citation = citation_from_args(args)
-            return json.dumps(provider._client.get_memory_entry(provider._scope_id, citation), ensure_ascii=False)
-        if tool_name == "powercontext_remember":
-            kind = str(args.get("kind", "")).strip()
-            text = str(args.get("text", "")).strip()
-            if not kind or not text:
-                return tool_error("kind and text are required")
-            result = provider._client.remember_memory(
-                provider._scope_id,
-                kind=kind[:128],
-                text=text[:8192],
-                reason=str(args.get("reason", "")).strip() or None,
-            )
-            return json.dumps(result, ensure_ascii=False)
-        if tool_name in OPERATION_TOOL_MAP:
-            result = request_operation(provider, OPERATION_TOOL_MAP[tool_name], args)
-            return json.dumps(result, ensure_ascii=False)
-        citation = citation_from_args(args)
-        result = provider._client.retire_memory_entry(
-            provider._scope_id,
-            citation,
-            reason=str(args.get("reason", "")).strip() or None,
-        )
-        return json.dumps(result, ensure_ascii=False)
+        return _dispatch_tool_call(provider, tool_name, args)
     except (PowerContextError, ValueError, TypeError) as error:
         logger.debug("PowerContext tool %s failed: %s", tool_name, error)
         return tool_error(f"PowerContext operation failed: {error}")

@@ -16,7 +16,6 @@
 
 from __future__ import annotations
 
-
 OPERATION_TOOL_MAP: dict[str, str] = {
     "powercontext_prepare_context": "prepare_context",
     "powercontext_capture_source": "capture_content_source",

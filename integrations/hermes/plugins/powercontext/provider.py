@@ -32,28 +32,67 @@ from . import commands, trace
 from .client import PowerContextClient, PowerContextError
 from .helpers import (
     DEFAULT_BASE_URL as _DEFAULT_BASE_URL,
+)
+from .helpers import (
     DEFAULT_MAX_BYTES as _DEFAULT_MAX_BYTES,
+)
+from .helpers import (
     DEFAULT_SCOPE_TEMPLATE as _DEFAULT_SCOPE_TEMPLATE,
+)
+from .helpers import (
     DEFAULT_TIMEOUT as _DEFAULT_TIMEOUT,
+)
+from .helpers import (
     MAX_PRECOMPRESS_CHARS as _MAX_PRECOMPRESS_CHARS,
+)
+from .helpers import (
     MAX_TURN_CHARS as _MAX_TURN_CHARS,
+)
+from .helpers import (
     as_bool as _as_bool,
+)
+from .helpers import (
     as_float as _as_float,
+)
+from .helpers import (
     as_int as _as_int,
-    config_path as _config_path,
-    config_value as _config_value,
+)
+from .helpers import (
     citation_from_response as _citation_from_response,
+)
+from .helpers import (
+    config_path as _config_path,
+)
+from .helpers import (
+    config_value as _config_value,
+)
+from .helpers import (
     entry_identity as _entry_identity,
+)
+from .helpers import (
     format_scope as _format_scope,
+)
+from .helpers import (
     load_json_config as _load_json_config,
+)
+from .helpers import (
     message_text as _message_text,
+)
+from .helpers import (
     messages_to_text as _messages_to_text,
+)
+from .helpers import (
     new_precompress_entries as _new_precompress_entries,
+)
+from .helpers import (
     precompress_entries as _precompress_entries,
+)
+from .helpers import (
     redact_secrets as _redact_secrets,
 )
 from .operations import OPERATION_TOOL_MAP as _OPERATION_TOOL_MAP
-from .workstream import read_scope as _read_workstream_scope, state_path as _workstream_state_path
+from .workstream import read_scope as _read_workstream_scope
+from .workstream import state_path as _workstream_state_path
 
 try:
     from agent.memory_provider import MemoryProvider, RecallStatus  # ty: ignore[unresolved-import]
@@ -65,6 +104,7 @@ logger = logging.getLogger(__name__)
 
 _MAX_MEMORY_WRITE_QUEUE = 128
 _MEMORY_WRITE_DRAIN_TIMEOUT = 5.0
+
 
 class PowerContextMemoryProvider(MemoryProvider):
     """Hermes provider backed by a running PowerContext server."""
