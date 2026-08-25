@@ -11,6 +11,7 @@ description: 在 Codex 插件、DeepSeek Harness 插件、Pi package、CLI、Pyt
 | --- | --- | --- |
 | Codex 插件 | 在 Codex 中跨会话恢复和显式维护 Memory | `powercontext setup codex` |
 | DeepSeek Harness 插件 | 在 DeepSeek Harness 中跨会话恢复和显式维护 Memory | `powercontext setup dsh` |
+| LangGraph 适配器 | 在 LangGraph 图中提供 Memory 工具和有界召回 | `powercontext-langgraph` |
 | Pi package | 在 Pi 中跨会话恢复、使用原生 Memory/Handoff 工具和 skill | `powercontext setup pi` |
 | CLI | 配置、诊断、Server 控制、能力检查和人工 Candidate 审核 | `powercontext[cli,server]` |
 | Python Client SDK | 对运行中的 Server 发起类型化异步调用 | `powercontext[client]` |
@@ -62,6 +63,21 @@ Handoff Report 的 JSON Workstream projection 同时返回 `handoff_revision_cou
 project-context skill 指导 DeepSeek Harness 何时检索、记忆、修订或停用 Memory。每轮模型开口前，插件会恢复相关
 条目，并把用户输入采集为 Source 证据；具名 `pc_*` 工具执行显式 HTTP 操作。插件不会启动或内嵌 Server。
 
+## LangGraph 适配器
+
+`powercontext-langgraph` 通过公开的 Python Client 把 LangGraph 图连接到运行中的 Server，提供三个组件：
+`powercontext_tools()` 返回供模型显式读写 Memory 的 `BaseTool`；`PowerContextRecall` 是节点或
+`pre_model_hook`，在模型步骤前把一个有界 `PreparedContext` 作为标记为不可信历史证据的系统消息注入；
+`PowerContextScope` 是用于图 `context_schema` 的 dataclass，承载 scope 和单次运行的连接覆盖项。召回节点和工具
+从 LangGraph runtime 读取当前 scope，否则回退到 `POWERCONTEXT_LANGGRAPH_*` 环境配置。
+
+Scope 解析优先取显式 `scope_id`，其次取由 Git remote 推导的 scope，都没有时报错——这与 Codex resolver 相反，
+因为已部署的图其工作目录通常无法标识项目。`TOKEN` 是裸 token，由 Client 组装为 `Authorization: Bearer`，不同于
+Codex、Claude Code 和 DeepSeek Harness 插件使用的 `POWERCONTEXT_*_AUTHORIZATION` header。召回和工具都会失败开放：
+Server 不可用时图仍能到达终点，工具返回一段简短的不可用字符串。本次发布只覆盖 Memory 读写和有界召回；自动采集、
+checkpointing 和 Handoff 不在范围内。适配器有意不实现 `BaseStore`——Memory 模型不提供其所需的按 key 读取、upsert
+和删除操作。它不会启动或内嵌 Server。
+
 ## Pi package
 
 原生 Pi package 提供 `project-context` skill、具名 `pc_*` Memory/Handoff 工具和 `/pc` 诊断命令。每次普通 agent
@@ -81,15 +97,6 @@ powercontext doctor pi
 powercontext server run
 powercontext ready
 powercontext capabilities
-powercontext candidate list --scope-id project:example
-powercontext candidate list --scope-id project:example --family skill
-powercontext candidate show --scope-id project:example CANDIDATE_ID
-powercontext candidate approve --scope-id project:example --expected-version 1 CANDIDATE_ID
-powercontext candidate reject --scope-id project:example --expected-version 1 --reason unsupported CANDIDATE_ID
-powercontext candidate revise experience --scope-id project:example --expected-version 1 \
-  --situation SITUATION --action ACTION --outcome OUTCOME --lesson LESSON CANDIDATE_ID
-powercontext candidate revise skill --scope-id project:example --expected-version 1 \
-  --name NAME --description DESCRIPTION --instructions-file instructions.md --validation CHECK CANDIDATE_ID
 powercontext experience generate --scope-id project:example --source-ref content/SOURCE_ID
 powercontext skill generate --scope-id project:example --origin experience \
   --artifact-ref experience/EXPERIENCE_ID@REVISION
@@ -109,6 +116,9 @@ powercontext external-skill import --scope-id project:example --fingerprint SHA2
 `powercontext doctor` 检查安装包和 Server，不要求任何集成；`powercontext doctor codex` 显式检查 Codex CLI
 和 PowerContext 插件；`powercontext doctor dsh` 检查 DeepSeek Harness CLI，以及 dump-config 是否列出插件 id
 `powercontext-dsh`；`powercontext doctor pi` 检查 Pi 可执行文件，以及 Pi 是否列出了 PowerContext package。
+
+`candidate` 命令组提供面向人工的 Review Inbox。列出、检查、修订、批准和拒绝的操作步骤见
+[审核 Candidate](../how-to/review-candidates.md)。
 
 Generation 和 revision 命令通过可重复的 `--source-ref TYPE/ID` 与
 `--artifact-ref FAMILY/ID@REVISION` 接收精确引用，不再读取序列化请求文件。
@@ -173,34 +183,20 @@ Experience 经 Review 批准后，确定性的 `searchable_text` 会写入现有
 索引，从而可在同一 scope 内被 `PreparedContext` 召回。pending/rejected Candidate、所有 managed Skill 和历史
 Experience Revision 仍不会进入 PreparedContext。
 
+证据、Candidate version、approved Revision、召回和导出的关系见
+[Experience 与 Skill 生命周期](../explanation/experience-and-skill-lifecycle.md)。
+
 ## 后台 Experience 孵化
 
-Integration 可以把已完成任务采集为 metadata 含 `"kind": "task-outcome"` 的 Content Source。启用
-Experience schedule 后，APScheduler 会扫描有上限的 Source window，并让配置好的 schema-bound pipeline
-生成可复用的 situation、action、outcome 和 lesson。每条 proposal 都引用精确 Source，并以 pending
-Experience Candidate 进入 Review Inbox。
-
-Experience 孵化使用独立于 Memory extraction 的持久化 Source cursor。Candidate 写入和 cursor 推进会在同一
-事务提交；generation 或写入失败时，该 window 保留给下次重试。普通 Prompt Source 不是 Task Outcome，
-不会进入这个 job。
-
-后台流程止于审核边界：它不会批准 Experience、把 pending 内容放入 PreparedContext、派生 managed Skill、
-把 Skill 导出给 Codex，或执行 instructions。只有支撑它的 Experience 获批后，Skill authoring 和导出才作为
-显式步骤继续。
+Scheduler 只接收 metadata 含 `"kind": "task-outcome"` 的 Content Source，使用独立的持久化 cursor，并创建
+pending Experience Candidate。Candidate 写入和 cursor 推进在同一事务提交。该 job 不会批准内容，也不会把 pending
+内容放入 `PreparedContext`。设置与验证步骤见[创建并审核 Experience](../how-to/create-and-review-experience.md)。
 
 ## 把 managed Skill 导出给 Codex
 
-配置好的生成器可通过 `generate_skill` 生成完整 managed Skill；已经拥有完整类型化内容的人或 integration
-可通过 `propose_skill` 提交。proposal 包括名称、用于发现的描述、instructions、validation，以及精确的
-Source 或 Artifact lineage。在 reviewer 批准精确 Candidate version 之前，它始终只是 Candidate。
-
-批准会创建不可变的 Skill Revision，但不会安装 Skill，也不会授予执行权限。要让 Codex 使用某个已批准
-Revision，必须通过 `skill export --target codex` 将它显式导出到新的代码库级或用户级 Skill 目录。该命令生成
-`SKILL.md` 和 `powercontext.json`；manifest 会记录精确 Artifact 引用和渲染内容哈希。目标目录已存在时命令会
-拒绝覆盖，更新必须是一次明确的新导出，不能静默替换。
-
-Codex 可以发现 `.agents/skills/<name>/SKILL.md` 下的代码库级导出。Artifact Revision 始终是内容权威，目录
-只是 host-local projection，可以从同一个精确 Revision 重建。
+批准会创建不可变的 Skill Revision，但不会安装 Skill 或授予执行权限。Codex exporter 将 `SKILL.md` 和
+`powercontext.json` 写入新的目标目录，并拒绝覆盖已有目录。Manifest 将 projection 绑定到一个精确 Artifact Revision
+及其渲染内容哈希。操作步骤见[创建并导出 managed Skill](../how-to/create-and-export-skill.md)。
 
 ## 外部 Agent-native Skill
 

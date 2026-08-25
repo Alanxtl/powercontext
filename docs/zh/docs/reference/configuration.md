@@ -102,19 +102,12 @@ search request 最终 `limit` 的结果。它不会修改已存储 Memory 或索
 external Skill import/fork。未配置模型时，这些 operation 会在持久化 Candidate 前返回 capability error；
 Candidate Review、exact read 和 external Skill scan/list/resolve 仍可使用。
 
-Experience 孵化使用独立的 APScheduler job 和持久化 Source cursor，可通过以下配置启用：
-
-```bash
-export POWERCONTEXT_SERVER_RUNTIME_EXPERIENCE_SCHEDULE_SECONDS=30
-export POWERCONTEXT_SERVER_INFERENCE_GENERATION_MODEL=provider:model-name
-powercontext server run
-```
-
-每次 activation 固定检查最多 32 条 Source，并且只把 metadata 包含 `"kind": "task-outcome"` 的 Content Source
-暴露给模型。该 job 会在 Review Inbox 中创建 pending Experience Candidate；它不会自动批准、进入
-PreparedContext、创建 managed Skill、将它导出给 Codex 或执行任何内容。Memory 和 Experience job 共用
-`POWERCONTEXT_HOME` 下的 APScheduler sidecar，但拥有独立的 job identity 和业务 cursor；取消其中一个 interval
-只会移除对应 job。
+Experience 孵化使用独立的 APScheduler job 和持久化 Source cursor，需要同时设置
+`POWERCONTEXT_SERVER_RUNTIME_EXPERIENCE_SCHEDULE_SECONDS` 与 `POWERCONTEXT_SERVER_INFERENCE_GENERATION_MODEL`。
+每次 activation 最多检查 32 条 Source，并且只把 metadata 包含 `"kind": "task-outcome"` 的 Content Source
+暴露给模型。Memory 和 Experience job 共用 `POWERCONTEXT_HOME` 下的 scheduler sidecar，但拥有独立的 job identity
+和业务 cursor；取消其中一个 interval 只会移除对应 job。
+设置与验证步骤见[创建并审核 Experience](../how-to/create-and-review-experience.md)。
 
 ### 外部 Codex Skill
 
@@ -173,24 +166,21 @@ export POWERCONTEXT_SERVER_INFERENCE_EMBEDDING_DIMENSION=1024
 
 Embedding normalization 默认为 `unit`。
 
-### SQLite Vec1
+### SQLite 向量检索
 
-SQLite vector 和 hybrid search 还需要 0.7 或更高版本的
-[SQLite Vec1](https://sqlite.org/vec1/doc/trunk/doc/vec1.md) loadable extension。PowerContext 不负责下载、构建或更新
-这个 native library。请先获取适用于 Server 操作系统和架构的构建产物，再同时配置 extension 路径和完整的
-embedding profile：
+SQLite vector 和 hybrid search 使用 [sqlite-vec](https://alexgarcia.xyz/sqlite-vec/)，它已包含在
+`powercontext[builtin]` 依赖中。只需配置完整的 embedding profile，无需配置 extension 路径：
 
 ```bash
 export POWERCONTEXT_SERVER_INFERENCE_EMBEDDING_MODEL=provider:embedding-model
 export POWERCONTEXT_SERVER_INFERENCE_EMBEDDING_PROFILE_ID=embedding-model-v1
 export POWERCONTEXT_SERVER_INFERENCE_EMBEDDING_DIMENSION=1024
 export POWERCONTEXT_SERVER_DATABASE_URL=sqlite+aiosqlite:////srv/powercontext/powercontext.db
-export POWERCONTEXT_SERVER_DATABASE_VEC1_EXTENSION=/opt/sqlite-extensions/vec1
 powercontext server run
 ```
 
-extension 路径必须指向 SQLite loader 可以打开的 library。Server 打开数据库时，PowerContext 会加载并探测该
-extension；如果 library 不兼容或版本低于 0.7，启动会失败。
+Server 打开数据库时，PowerContext 会加载并探测捆绑的 extension；如果当前 platform 或 SQLite build 与 package
+中的 library 不兼容，启动会失败。
 
 在另一个终端确认初始化后的 Runtime 已报告 vector 和 hybrid search：
 
@@ -198,8 +188,7 @@ extension；如果 library 不兼容或版本低于 0.7，启动会失败。
 powercontext capabilities
 ```
 
-如果没有可用的 Vec1，请不要设置 `POWERCONTEXT_SERVER_DATABASE_VEC1_EXTENSION`。即使没有 embedding model 或
-native extension，SQLite full-text search 仍然可用。
+没有配置 embedding model 时，SQLite full-text search 仍然可用。
 
 ## CLI Server 连接
 

@@ -106,19 +106,13 @@ The same configured generation model gates explicit Experience generation, manag
 and external Skill import or fork. Without it, these operations return a capability error before persisting a
 Candidate. Candidate Review, exact reads, and external Skill scan/list/resolve continue to work.
 
-Experience incubation is a separate APScheduler job with its own persisted Source cursor. Enable it with:
-
-```bash
-export POWERCONTEXT_SERVER_RUNTIME_EXPERIENCE_SCHEDULE_SECONDS=30
-export POWERCONTEXT_SERVER_INFERENCE_GENERATION_MODEL=provider:model-name
-powercontext server run
-```
-
-Each activation inspects a fixed window of at most 32 Sources and exposes only Content Sources whose metadata contains
-`"kind": "task-outcome"` to the model. It creates pending Experience Candidates in the Review Inbox; it does not
-approve them, place them in PreparedContext, create a managed Skill, export it for Codex, or execute anything.
-The Memory and Experience jobs share the APScheduler sidecar under `POWERCONTEXT_HOME`, but keep independent job
-identities and business cursors. Unsetting one interval removes only that job.
+Experience incubation is a separate APScheduler job with its own persisted Source cursor. It requires both
+`POWERCONTEXT_SERVER_RUNTIME_EXPERIENCE_SCHEDULE_SECONDS` and
+`POWERCONTEXT_SERVER_INFERENCE_GENERATION_MODEL`. Each activation inspects at most 32 Sources and exposes only Content
+Sources whose metadata contains `"kind": "task-outcome"`. The Memory and Experience jobs share the scheduler sidecar
+under `POWERCONTEXT_HOME`, but keep independent job identities and business cursors. Unsetting one interval removes
+only that job. See [Create and review an Experience](../how-to/create-and-review-experience.md) for setup and
+verification steps.
 
 ### External Codex Skills
 
@@ -179,24 +173,21 @@ Optional settings are `POWERCONTEXT_SERVER_INFERENCE_EMBEDDING_NORMALIZATION` an
 
 Embedding normalization defaults to `unit`.
 
-### SQLite Vec1
+### SQLite vector search
 
-SQLite vector and hybrid search additionally require a
-[SQLite Vec1](https://sqlite.org/vec1/doc/trunk/doc/vec1.md) 0.7 or newer loadable extension. PowerContext does not
-download, build, or update this native library. Obtain it for the Server's operating system and architecture, then
-set its path together with the complete embedding profile:
+SQLite vector and hybrid search use [sqlite-vec](https://alexgarcia.xyz/sqlite-vec/), which is bundled with the
+`powercontext[builtin]` dependency set. Configure the complete embedding profile; no extension path is needed:
 
 ```bash
 export POWERCONTEXT_SERVER_INFERENCE_EMBEDDING_MODEL=provider:embedding-model
 export POWERCONTEXT_SERVER_INFERENCE_EMBEDDING_PROFILE_ID=embedding-model-v1
 export POWERCONTEXT_SERVER_INFERENCE_EMBEDDING_DIMENSION=1024
 export POWERCONTEXT_SERVER_DATABASE_URL=sqlite+aiosqlite:////srv/powercontext/powercontext.db
-export POWERCONTEXT_SERVER_DATABASE_VEC1_EXTENSION=/opt/sqlite-extensions/vec1
 powercontext server run
 ```
 
-The extension path must identify a library that the SQLite loader can open. PowerContext loads and probes the
-extension when the Server opens the database; startup fails if the library is incompatible or older than 0.7.
+PowerContext loads and probes the bundled extension when the Server opens the database. Startup fails if the package
+does not contain a library compatible with the current platform or SQLite build.
 
 In another terminal, confirm that the initialized runtime reports vector and hybrid search:
 
@@ -204,8 +195,7 @@ In another terminal, confirm that the initialized runtime reports vector and hyb
 powercontext capabilities
 ```
 
-If Vec1 is unavailable, leave `POWERCONTEXT_SERVER_DATABASE_VEC1_EXTENSION` unset. SQLite full-text search remains
-available without an embedding model or native extension.
+SQLite full-text search remains available when no embedding model is configured.
 
 ## CLI Server connection
 
