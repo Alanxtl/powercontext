@@ -527,7 +527,7 @@ def setup_hermes(
         typer.Option("--json", help="Write the result as JSON."),
     ] = False,
 ) -> None:
-    """Install the PowerContext Hermes memory provider."""
+    """Install the PowerContext Hermes provider and /pc command companion."""
 
     from powercontext.cli.hermes import install_hermes_plugin, run_hermes_diagnostics
 
@@ -547,6 +547,7 @@ def setup_hermes(
         return
     typer.echo("PowerContext Hermes setup complete.")
     typer.echo(f"Plugin: {result.plugin} ({result.plugin_path})")
+    typer.echo(f"Command companion: {result.command_plugin_path}")
     typer.echo(f"Hermes home: {result.hermes_home}")
     typer.echo(f"Data directory: {result.data_dir}")
     typer.echo("Next: run `hermes memory setup`, select PowerContext, then start Hermes.")

@@ -27,10 +27,34 @@ from powercontext.cli.system import doctor_app, setup_app
 
 
 def _write_plugin(root: Path) -> Path:
-    plugin = root / "integrations" / "hermes" / "plugins" / "powercontext"
+    plugins_root = root / "integrations" / "hermes" / "plugins"
+    plugin = plugins_root / "powercontext"
+    command_plugin = plugins_root / "powercontext-command"
     plugin.mkdir(parents=True)
+    command_plugin.mkdir(parents=True)
     (plugin / "__init__.py").write_text("def register(): pass\n", encoding="utf-8")
     (plugin / "plugin.yaml").write_text("name: powercontext\n", encoding="utf-8")
+    (command_plugin / "__init__.py").write_text("def register(ctx): pass\n", encoding="utf-8")
+    (command_plugin / "plugin.yaml").write_text(
+        "name: powercontext-command\nkind: standalone\n",
+        encoding="utf-8",
+    )
+    return plugin
+
+
+def _write_installed_plugins(hermes_home: Path) -> Path:
+    plugins_root = hermes_home / "plugins"
+    plugin = plugins_root / "powercontext"
+    command_plugin = plugins_root / "powercontext-command"
+    plugin.mkdir(parents=True)
+    command_plugin.mkdir(parents=True)
+    (plugin / "__init__.py").write_text("def register(): pass\n", encoding="utf-8")
+    (plugin / "plugin.yaml").write_text("name: powercontext\n", encoding="utf-8")
+    (command_plugin / "__init__.py").write_text("def register(ctx): pass\n", encoding="utf-8")
+    (command_plugin / "plugin.yaml").write_text(
+        "name: powercontext-command\nkind: standalone\n",
+        encoding="utf-8",
+    )
     return plugin
 
 
@@ -39,6 +63,8 @@ def _successful_hermes_run(command: list[str], **_kwargs) -> CompletedProcess[st
         return CompletedProcess(command, 0, stdout="Hermes Agent v0.20.4 (2026.8.18)\n", stderr="")
     if command[1:3] == ["plugins", "doctor"]:
         return CompletedProcess(command, 0, stdout="Plugin Doctor: OK\n", stderr="")
+    if command[1:3] == ["plugins", "enable"]:
+        return CompletedProcess(command, 0, stdout="Plugin enabled\n", stderr="")
     raise AssertionError(command)
 
 
@@ -65,8 +91,10 @@ def test_setup_hermes_copies_provider_from_a_local_checkout(tmp_path: Path, monk
         "plugin_path": str(hermes_home / "plugins" / "powercontext"),
         "hermes_home": str(hermes_home),
         "data_dir": str(tmp_path / "data"),
+        "command_plugin_path": str(hermes_home / "plugins" / "powercontext-command"),
     }
     assert (hermes_home / "plugins" / "powercontext" / "plugin.yaml").is_file()
+    assert (hermes_home / "plugins" / "powercontext-command" / "plugin.yaml").is_file()
     assert not (hermes_home / "plugins" / "powercontext" / "removed_module.py").exists()
 
 
@@ -84,10 +112,7 @@ def test_setup_hermes_reports_missing_cli(tmp_path: Path, monkeypatch) -> None:
 
 def test_doctor_hermes_reports_an_installed_provider(tmp_path: Path, monkeypatch) -> None:
     hermes_home = tmp_path / "hermes"
-    plugin = hermes_home / "plugins" / "powercontext"
-    plugin.mkdir(parents=True)
-    (plugin / "__init__.py").write_text("def register(): pass\n", encoding="utf-8")
-    (plugin / "plugin.yaml").write_text("name: powercontext\n", encoding="utf-8")
+    _write_installed_plugins(hermes_home)
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
     monkeypatch.setattr(hermes_cli, "which", lambda _name: "/usr/bin/hermes")
     monkeypatch.setattr(hermes_cli.subprocess, "run", _successful_hermes_run)
@@ -107,6 +132,11 @@ def test_doctor_hermes_reports_an_installed_provider(tmp_path: Path, monkeypatch
         "status": "ok",
         "detail": "powercontext passed Hermes plugin doctor",
     }
+    assert payload["checks"]["command_plugin"] == {
+        "ok": True,
+        "status": "ok",
+        "detail": "powercontext-command passed Hermes plugin doctor",
+    }
 
 
 def test_doctor_hermes_reports_missing_provider(tmp_path: Path, monkeypatch) -> None:
@@ -123,10 +153,7 @@ def test_doctor_hermes_reports_missing_provider(tmp_path: Path, monkeypatch) -> 
 
 def test_doctor_hermes_rejects_a_broken_provider(tmp_path: Path, monkeypatch) -> None:
     hermes_home = tmp_path / "hermes"
-    plugin = hermes_home / "plugins" / "powercontext"
-    plugin.mkdir(parents=True)
-    (plugin / "__init__.py").write_text("def register(): pass\n", encoding="utf-8")
-    (plugin / "plugin.yaml").write_text("name: powercontext\n", encoding="utf-8")
+    _write_installed_plugins(hermes_home)
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
     monkeypatch.setattr(hermes_cli, "which", lambda _name: "/usr/bin/hermes")
 

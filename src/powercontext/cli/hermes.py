@@ -32,7 +32,9 @@ from powercontext.paths import powercontext_data_dir
 
 HERMES_HOME_ENV = "HERMES_HOME"
 HERMES_PLUGIN_RELATIVE = Path("integrations") / "hermes" / "plugins" / "powercontext"
+HERMES_COMMAND_PLUGIN_RELATIVE = Path("integrations") / "hermes" / "plugins" / "powercontext-command"
 HERMES_PLUGIN_NAME = "powercontext"
+HERMES_COMMAND_PLUGIN_NAME = "powercontext-command"
 HERMES_MIN_VERSION = (0, 20, 4)
 _HERMES_VERSION_PATTERN = re.compile(r"Hermes Agent v?(\d+)\.(\d+)\.(\d+)")
 
@@ -43,10 +45,11 @@ class HermesSetupResult:
     plugin_path: str
     hermes_home: str
     data_dir: str
+    command_plugin_path: str
 
 
 def install_hermes_plugin(*, source: str, ref: str) -> HermesSetupResult:
-    """Install the PowerContext provider into Hermes' user plugin directory."""
+    """Install the provider and its early slash-command companion."""
 
     executable = hermes_executable()
     get_hermes_version(executable)
@@ -56,19 +59,31 @@ def install_hermes_plugin(*, source: str, ref: str) -> HermesSetupResult:
     except OSError as error:
         raise SetupError.data_directory(data_dir, error) from error
 
-    plugin_dir = resolve_hermes_plugin_dir(source=source, ref=ref)
+    plugin_dir, command_plugin_dir = resolve_hermes_plugin_dirs(source=source, ref=ref)
     home = hermes_home()
     target = home / "plugins" / HERMES_PLUGIN_NAME
+    command_target = home / "plugins" / HERMES_COMMAND_PLUGIN_NAME
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
-        staging = _new_staging_directory(target)
+        staged: list[tuple[Path, Path]] = []
         try:
-            shutil.rmtree(staging)
-            shutil.copytree(plugin_dir, staging)
-            _run_plugin_doctor(executable, staging)
-            _replace_directory(staging, target)
+            for source_dir, destination in (
+                (plugin_dir, target),
+                (command_plugin_dir, command_target),
+            ):
+                staging = _new_staging_directory(destination)
+                staged.append((staging, destination))
+                shutil.rmtree(staging)
+                shutil.copytree(source_dir, staging)
+                _run_plugin_doctor(executable, staging)
+
+            for staging, destination in staged:
+                _replace_directory(staging, destination)
+
+            _enable_hermes_plugin(executable, HERMES_COMMAND_PLUGIN_NAME)
         except BaseException:
-            _remove_path(staging)
+            for staging, _destination in staged:
+                _remove_path(staging)
             raise
     except OSError as error:
         raise SetupError.hermes_plugin_write(target, error) from error
@@ -78,6 +93,7 @@ def install_hermes_plugin(*, source: str, ref: str) -> HermesSetupResult:
         plugin_path=str(target),
         hermes_home=str(home),
         data_dir=str(data_dir),
+        command_plugin_path=str(command_target),
     )
 
 
@@ -89,6 +105,16 @@ def resolve_hermes_plugin_dir(*, source: str, ref: str) -> Path:
     return plugin_dir_from_checkout(_materialize_remote_checkout(source, ref))
 
 
+def resolve_hermes_plugin_dirs(*, source: str, ref: str) -> tuple[Path, Path]:
+    """Return the provider and standalone command plugin directories."""
+
+    if _is_local_source(source):
+        root = Path(source).expanduser().resolve()
+    else:
+        root = _materialize_remote_checkout(source, ref)
+    return plugin_dirs_from_checkout(root)
+
+
 def plugin_dir_from_checkout(root: Path) -> Path:
     """Accept either the provider directory or a PowerContext repository root."""
 
@@ -98,6 +124,16 @@ def plugin_dir_from_checkout(root: Path) -> Path:
     if _is_hermes_plugin(plugin):
         return plugin
     raise SetupError.missing_hermes_plugin(root)
+
+
+def plugin_dirs_from_checkout(root: Path) -> tuple[Path, Path]:
+    """Resolve both Hermes plugin directories from a repository checkout."""
+
+    provider = plugin_dir_from_checkout(root)
+    command = provider.parent / HERMES_COMMAND_PLUGIN_NAME
+    if not _is_hermes_plugin(command):
+        raise SetupError.missing_hermes_plugin(root)
+    return provider, command
 
 
 def run_hermes_diagnostics() -> dict[str, Diagnostic]:
@@ -129,12 +165,17 @@ def run_hermes_diagnostics() -> dict[str, Diagnostic]:
         }
 
     plugin = hermes_home() / "plugins" / HERMES_PLUGIN_NAME
+    command_plugin = hermes_home() / "plugins" / HERMES_COMMAND_PLUGIN_NAME
     if not _is_hermes_plugin(plugin):
         return {
             "hermes": Diagnostic(status=DiagnosticStatus.OK, detail=f"{executable} (Hermes Agent v{hermes_version})"),
             "plugin": Diagnostic(
                 status=DiagnosticStatus.FAILED,
                 detail="PowerContext Hermes plugin is not installed",
+            ),
+            "command_plugin": Diagnostic(
+                status=DiagnosticStatus.SKIPPED,
+                detail="not checked because the PowerContext memory provider is not installed",
             ),
         }
 
@@ -148,9 +189,26 @@ def run_hermes_diagnostics() -> dict[str, Diagnostic]:
             detail="powercontext passed Hermes plugin doctor",
         )
 
+    if not _is_hermes_plugin(command_plugin):
+        command_diagnostic = Diagnostic(
+            status=DiagnosticStatus.FAILED,
+            detail="PowerContext Hermes command companion is not installed",
+        )
+    else:
+        try:
+            _run_plugin_doctor(executable, command_plugin)
+        except SetupError as error:
+            command_diagnostic = Diagnostic(status=DiagnosticStatus.FAILED, detail=str(error))
+        else:
+            command_diagnostic = Diagnostic(
+                status=DiagnosticStatus.OK,
+                detail="powercontext-command passed Hermes plugin doctor",
+            )
+
     return {
         "hermes": Diagnostic(status=DiagnosticStatus.OK, detail=f"{executable} (Hermes Agent v{hermes_version})"),
         "plugin": plugin_diagnostic,
+        "command_plugin": command_diagnostic,
     }
 
 
@@ -210,7 +268,10 @@ def _is_hermes_plugin(path: Path) -> bool:
 
 
 def _usable_checkout(target: Path) -> bool:
-    return _is_hermes_plugin(target) or _is_hermes_plugin(target / HERMES_PLUGIN_RELATIVE)
+    if _is_hermes_plugin(target):
+        return _is_hermes_plugin(target.parent / HERMES_COMMAND_PLUGIN_NAME)
+    provider = target / HERMES_PLUGIN_RELATIVE
+    return _is_hermes_plugin(provider) and _is_hermes_plugin(provider.parent / HERMES_COMMAND_PLUGIN_NAME)
 
 
 def _materialize_remote_checkout(source: str, ref: str) -> Path:
@@ -272,6 +333,16 @@ def _run_plugin_doctor(executable: str, plugin: Path) -> None:
         raise SetupError.command_failed(command, detail)
 
 
+def _enable_hermes_plugin(executable: str, name: str) -> None:
+    """Enable an installed standalone plugin without granting tool overrides."""
+
+    command = [executable, "plugins", "enable", name, "--no-allow-tool-override"]
+    completed = _run_hermes_command(command)
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip() or f"exit code {completed.returncode}"
+        raise SetupError.command_failed(command, detail)
+
+
 def _run_hermes_command(command: list[str]) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(  # noqa: S603 - the executable and arguments are controlled by this CLI.
@@ -321,6 +392,8 @@ def _remove_path(path: Path) -> None:
 
 
 __all__ = [
+    "HERMES_COMMAND_PLUGIN_NAME",
+    "HERMES_COMMAND_PLUGIN_RELATIVE",
     "HERMES_PLUGIN_NAME",
     "HermesSetupResult",
     "checkout_target",
@@ -330,6 +403,8 @@ __all__ = [
     "hermes_home",
     "install_hermes_plugin",
     "plugin_dir_from_checkout",
+    "plugin_dirs_from_checkout",
     "resolve_hermes_plugin_dir",
+    "resolve_hermes_plugin_dirs",
     "run_hermes_diagnostics",
 ]
