@@ -466,7 +466,7 @@ def setup_openclaw(
     server_url: Annotated[
         str,
         typer.Option(help="PowerContext Server base URL configured for the plugin."),
-    ] = "http://127.0.0.1:8765",
+    ] = "http://127.0.0.1:8000",
     scope_mode: Annotated[
         str,
         typer.Option("--scope-mode", help="Memory scope mode: agent or project."),
@@ -738,6 +738,23 @@ def doctor_hermes(
     from powercontext.cli.hermes import run_hermes_diagnostics
 
     diagnostics = run_hermes_diagnostics()
+    _write_diagnostics(diagnostics, json_output=json_output)
+    if not _diagnostics_ok(diagnostics):
+        raise typer.Exit(code=1)
+
+
+@doctor_app.command("openclaw")
+def doctor_openclaw(
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Write the result as JSON."),
+    ] = False,
+) -> None:
+    """Check the optional OpenClaw CLI and PowerContext memory plugin."""
+
+    from powercontext.cli.openclaw import run_openclaw_diagnostics
+
+    diagnostics = run_openclaw_diagnostics()
     _write_diagnostics(diagnostics, json_output=json_output)
     if not _diagnostics_ok(diagnostics):
         raise typer.Exit(code=1)
