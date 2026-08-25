@@ -68,10 +68,12 @@ from powercontext.http import (
     HandoffResolution,
     HealthResponse,
     ImportExternalSkillRequest,
+    KnownHandoffScopePage,
     ListArtifactCandidatesRequest,
     ListExternalSkillsRequest,
     ListExternalSkillsResponse,
     ListHandoffReportActivitiesRequest,
+    ListHandoffReportKnownScopesRequest,
     ListHandoffReportProjectsRequest,
     ListHandoffReportWorkstreamsRequest,
     ListMemoryChangesRequest,
@@ -145,6 +147,7 @@ from powercontext.http._generated.operations import (
     LIST_ARTIFACT_CANDIDATES,
     LIST_EXTERNAL_SKILLS,
     LIST_HANDOFF_REPORT_ACTIVITIES,
+    LIST_HANDOFF_REPORT_KNOWN_SCOPES,
     LIST_HANDOFF_REPORT_PROJECTS,
     LIST_HANDOFF_REPORT_WORKSTREAMS,
     LIST_MEMORY_CHANGES,
@@ -264,6 +267,14 @@ class PowerContextClient:
 
         return await self._request(LIST_HANDOFF_REPORT_PROJECTS, request)
 
+    async def list_handoff_report_known_scopes(
+        self,
+        request: ListHandoffReportKnownScopesRequest,
+    ) -> KnownHandoffScopePage:
+        """List scopes that contain a committed Handoff."""
+
+        return await self._request(LIST_HANDOFF_REPORT_KNOWN_SCOPES, request)
+
     async def register_handoff_report_workstream(
         self,
         request: RegisterHandoffReportWorkstreamRequest,
@@ -357,8 +368,8 @@ class PowerContextClient:
             mode="json",
             by_alias=True,
         )
+        span = ClientSpan.start(GET_HANDOFF_REPORT.operation_id)
         try:
-            span = ClientSpan.start(GET_HANDOFF_REPORT.operation_id)
             headers = {} if self._headers is None else dict(self._headers)
             span.inject(headers)
             response = await self._http_client.request(
@@ -582,8 +593,8 @@ class PowerContextClient:
             else:
                 json_payload = payload
 
+        span = ClientSpan.start(operation.operation_id)
         try:
-            span = ClientSpan.start(operation.operation_id)
             headers = {} if self._headers is None else dict(self._headers)
             span.inject(headers)
             response = await self._http_client.request(

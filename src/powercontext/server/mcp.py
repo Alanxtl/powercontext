@@ -29,6 +29,7 @@ from fastmcp.server.providers.openapi import (
 from fastmcp.utilities.lifespan import combine_lifespans
 from fastmcp.utilities.openapi import HTTPRoute
 from mcp.types import ToolAnnotations
+from typing_extensions import override
 
 from powercontext.http._generated.operations import (
     ACKNOWLEDGE_HANDOFF,
@@ -45,6 +46,7 @@ from powercontext.http._generated.operations import (
     GET_MEMORY_ENTRY,
     HANDOFF_CURRENT_WORK,
     LIST_ARTIFACT_CANDIDATES,
+    LIST_HANDOFF_REPORT_KNOWN_SCOPES,
     LIST_HANDOFF_REPORT_PROJECTS,
     LIST_HANDOFF_REPORT_WORKSTREAMS,
     LIST_MEMORY_ENTRIES,
@@ -85,6 +87,7 @@ _MCP_OPERATION_IDS = frozenset({
     REMEMBER_MEMORY.operation_id,
     REVISE_MEMORY_ENTRY.operation_id,
     GET_HANDOFF_REPORT.operation_id,
+    LIST_HANDOFF_REPORT_KNOWN_SCOPES.operation_id,
     GET_HANDOFF_REPORT_WORKSPACE.operation_id,
     RETIRE_MEMORY_ENTRY.operation_id,
     LIST_ARTIFACT_CANDIDATES.operation_id,
@@ -99,6 +102,7 @@ _MCP_READ_ONLY_OPERATION_IDS = frozenset({
     LIST_MEMORY_ENTRIES.operation_id,
     GET_MEMORY_ENTRY.operation_id,
     GET_HANDOFF_REPORT.operation_id,
+    LIST_HANDOFF_REPORT_KNOWN_SCOPES.operation_id,
     GET_HANDOFF_REPORT_WORKSPACE.operation_id,
     LIST_ARTIFACT_CANDIDATES.operation_id,
     GET_ARTIFACT_CANDIDATE.operation_id,
@@ -179,6 +183,7 @@ def create_mcp_server(
 
 
 class _InternalBridgeTransport(httpx.ASGITransport):
+    @override
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         request_id = current_request_id()
         if request_id is not None:
