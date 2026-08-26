@@ -85,8 +85,9 @@ model.
 ## Integrations
 
 PowerContext provides official integrations and installation guides for Codex, Claude Code, DeepSeek Harness, Hermes
-Agent, Pi Coding Agent, OpenClaw, OpenCode, and WorkBuddy. These integrations use the same scoped data and
-history-preserving contracts through PowerContext Server; the host integrations do not start or embed the Server.
+Agent, LangChain, LangGraph, Pi Coding Agent, OpenClaw, OpenCode, and WorkBuddy. These integrations use the same scoped
+data and history-preserving contracts through PowerContext Server; the host integrations do not start or embed the
+Server.
 
 ### Official integrations
 
@@ -102,6 +103,9 @@ history-preserving contracts through PowerContext Server; the host integrations 
 <td align="center" width="120"><a href="integrations/workbuddy/README.md"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='10' fill='%231f6feb'/%3E%3Ctext x='24' y='31' font-family='Arial,Helvetica,sans-serif' font-size='18' font-weight='bold' fill='%23ffffff' text-anchor='middle'%3EWB%3C/text%3E%3C/svg%3E" alt="WorkBuddy" width="48" height="48" /><br /><sub><b>WorkBuddy</b></sub></a></td>
 </tr>
 </table>
+
+Python agent applications can use the [LangChain middleware](docs/en/docs/how-to/configure-langchain.md) or the
+[LangGraph node and tools adapter](docs/en/docs/how-to/configure-langgraph.md).
 
 ## Development
 

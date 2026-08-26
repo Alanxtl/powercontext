@@ -12,6 +12,7 @@ All remote interfaces operate on the same Server and persistent Artifact storage
 | Codex plugin | Cross-session recall and explicit Memory maintenance in Codex | `powercontext setup codex` |
 | Pydantic AI adapter | Memory tools, automatic context preparation, and optional trajectory capture | `powercontext-pydantic-ai` |
 | DeepSeek Harness plugin | Cross-session recall and explicit Memory maintenance in DeepSeek Harness | `powercontext setup dsh` |
+| LangChain middleware | Bounded recall and completed-turn Source capture in `create_agent` | `powercontext-langchain` |
 | LangGraph adapter | Memory tools and bounded recall inside a LangGraph graph | `powercontext-langgraph` |
 | Pi package | Cross-session recall, native Memory/Handoff tools, and skills in Pi | `powercontext setup pi` |
 | CLI | Setup, diagnostics, Server control, capability checks, and human Candidate review | `powercontext[cli,server]` |
@@ -96,6 +97,15 @@ still reaches its end and the tools return a short unavailable string. This rele
 bounded recall only; automatic capture, checkpointing, and Handoff are out of scope. The adapter deliberately does not
 implement `BaseStore`, whose get, upsert-by-key, and delete operations the Memory model does not provide. It never
 starts or embeds the Server.
+
+## LangChain middleware
+
+`PowerContextMiddleware` uses LangChain's `AgentMiddleware` API. It injects one bounded PreparedContext into each
+current model request without changing agent state. Automatic capture is disabled by default; pass `auto_capture=True`
+to capture the latest user message and final plain-text or structured answer as Content Source evidence after a
+successful run. Source-to-Memory activation remains a Server responsibility. Recall and capture fail open, and neither
+path starts or embeds the Server. It ships independently as `powercontext-langchain`; the LangGraph adapter remains a
+separate node-and-tool integration.
 
 ## Pi package
 
