@@ -1005,6 +1005,30 @@ def test_backend_failure_fails_open(provider_and_client, caplog):
     }]
 
 
+def test_tool_failure_fails_open_and_emits_diagnostic(provider_and_client, caplog):
+    provider, client = provider_and_client
+
+    def failed_search(*args, **kwargs):
+        from plugins.powercontext.client import PowerContextTransportError  # ty: ignore[unresolved-import]
+
+        raise PowerContextTransportError("offline")
+
+    client.search_memory = failed_search
+
+    with caplog.at_level(logging.WARNING, logger="plugins.powercontext.provider"):
+        first = json.loads(provider.handle_tool_call("powercontext_search_memory", {"query": "deployment"}))
+        second = json.loads(provider.handle_tool_call("powercontext_search_memory", {"query": "deployment"}))
+
+    assert first == second == {"error": "PowerContext operation failed: offline"}
+    diagnostics = [json.loads(record.message) for record in caplog.records if record.name == "plugins.powercontext.provider"]
+    assert diagnostics == [{
+        "component": "powercontext.hermes",
+        "event": "tool_call",
+        "outcome": "server_unavailable",
+        "recovery": "powercontext doctor",
+    }]
+
+
 def test_cli_registers_provider_commands(hermes_modules):
     _provider_module, cli_module = hermes_modules
     parser = argparse.ArgumentParser()

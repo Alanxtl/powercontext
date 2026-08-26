@@ -64,6 +64,12 @@ POWERCONTEXT_SUBCOMMANDS = (
 )
 
 
+def _emit_failure_diagnostic(provider: Any, event: str, error: PowerContextError) -> None:
+    emit = getattr(provider, "_emit_failure_diagnostic", None)
+    if callable(emit):
+        emit(event, error)
+
+
 def register_subcommands() -> None:
     """Expose PowerContext's first-level commands to Hermes autocomplete.
 
@@ -361,6 +367,7 @@ def status_command(provider: Any) -> str:
                 try:
                     result[name] = method()
                 except PowerContextError as error:
+                    _emit_failure_diagnostic(provider, "status", error)
                     result[name] = {"error": str(error)}
     return json.dumps(result, ensure_ascii=False, indent=2)
 
@@ -378,12 +385,16 @@ def handle_slash_command(provider: Any, raw_args: str) -> str:  # noqa: C901
         try:
             return group_command(provider, raw_parts[0].lower(), [raw_parts[1], raw_parts[2]])
         except (PowerContextError, ValueError, TypeError) as error:
+            if isinstance(error, PowerContextError):
+                _emit_failure_diagnostic(provider, "slash_command", error)
             logger.debug("PowerContext /pc command failed: %s", error)
             return tool_error(f"PowerContext operation failed: {error}")
     if len(raw_parts) == 3 and raw_parts[0].lower() == "call":
         try:
             return operation_command(provider, raw_parts[1], [raw_parts[2]])
         except (PowerContextError, ValueError, TypeError) as error:
+            if isinstance(error, PowerContextError):
+                _emit_failure_diagnostic(provider, "slash_command", error)
             logger.debug("PowerContext /pc command failed: %s", error)
             return tool_error(f"PowerContext operation failed: {error}")
     try:
@@ -419,6 +430,8 @@ def handle_slash_command(provider: Any, raw_args: str) -> str:  # noqa: C901
                 return tool_error("Usage: /pc call OPERATION [PAYLOAD_JSON]")
             return operation_command(provider, args[1], args[2:])
     except (PowerContextError, ValueError, TypeError) as error:
+        if isinstance(error, PowerContextError):
+            _emit_failure_diagnostic(provider, "slash_command", error)
         logger.debug("PowerContext /pc command failed: %s", error)
         return tool_error(f"PowerContext operation failed: {error}")
     return tool_error(f"Unknown /pc command: {args[0]}")
@@ -809,5 +822,7 @@ def handle_tool_call(provider: Any, tool_name: str, args: dict[str, Any], **kwar
     try:
         return _dispatch_tool_call(provider, tool_name, args)
     except (PowerContextError, ValueError, TypeError) as error:
+        if isinstance(error, PowerContextError):
+            _emit_failure_diagnostic(provider, "tool_call", error)
         logger.debug("PowerContext tool %s failed: %s", tool_name, error)
         return tool_error(f"PowerContext operation failed: {error}")
