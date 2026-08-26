@@ -23,7 +23,7 @@ from typer.testing import CliRunner
 
 import powercontext.cli.hermes as hermes_cli
 from powercontext.cli.app import create_cli
-from powercontext.cli.system import doctor_app, setup_app
+from powercontext.cli.system import SetupError, doctor_app, setup_app
 
 
 def _write_plugin(root: Path) -> Path:
@@ -78,6 +78,9 @@ def test_setup_hermes_copies_provider_from_a_local_checkout(tmp_path: Path, monk
     old_plugin = hermes_home / "plugins" / "powercontext"
     old_plugin.mkdir(parents=True)
     (old_plugin / "removed_module.py").write_text("stale\n", encoding="utf-8")
+    unrelated_plugin = hermes_home / "plugins" / "other-plugin"
+    unrelated_plugin.mkdir()
+    (unrelated_plugin / "keep.txt").write_text("keep\n", encoding="utf-8")
     monkeypatch.setattr(hermes_cli.subprocess, "run", _successful_hermes_run)
 
     result = CliRunner().invoke(
@@ -96,6 +99,86 @@ def test_setup_hermes_copies_provider_from_a_local_checkout(tmp_path: Path, monk
     assert (hermes_home / "plugins" / "powercontext" / "plugin.yaml").is_file()
     assert (hermes_home / "plugins" / "powercontext-command" / "plugin.yaml").is_file()
     assert not (hermes_home / "plugins" / "powercontext" / "removed_module.py").exists()
+    assert (unrelated_plugin / "keep.txt").read_text(encoding="utf-8") == "keep\n"
+
+
+def test_setup_hermes_restores_both_plugins_when_second_replace_fails(tmp_path: Path, monkeypatch) -> None:
+    checkout = tmp_path / "powercontext"
+    _write_plugin(checkout)
+    hermes_home = tmp_path / "hermes"
+    old_provider = _write_installed_plugins(hermes_home)
+    old_command = hermes_home / "plugins" / "powercontext-command"
+    (old_provider / "version.txt").write_text("old provider\n", encoding="utf-8")
+    (old_command / "version.txt").write_text("old command\n", encoding="utf-8")
+    unrelated_plugin = hermes_home / "plugins" / "other-plugin"
+    unrelated_plugin.mkdir()
+    (unrelated_plugin / "keep.txt").write_text("keep\n", encoding="utf-8")
+    monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+    monkeypatch.setenv("POWERCONTEXT_HOME", str(tmp_path / "data"))
+    monkeypatch.setattr(hermes_cli, "which", lambda _name: "/usr/bin/hermes")
+    monkeypatch.setattr(hermes_cli.subprocess, "run", _successful_hermes_run)
+
+    original_replace = hermes_cli.os.replace
+    failed = False
+
+    def fail_second_replace(source, destination):
+        nonlocal failed
+        if not failed and Path(destination) == old_command and Path(source).name.startswith(f".{old_command.name}-"):
+            failed = True
+            raise OSError
+        original_replace(source, destination)
+
+    monkeypatch.setattr(hermes_cli.os, "replace", fail_second_replace)
+
+    result = CliRunner().invoke(
+        create_cli([setup_app]),
+        ["setup", "hermes", "--source", str(checkout)],
+    )
+
+    assert result.exit_code == 1
+    assert failed
+    assert (old_provider / "version.txt").read_text(encoding="utf-8") == "old provider\n"
+    assert (old_command / "version.txt").read_text(encoding="utf-8") == "old command\n"
+    assert (unrelated_plugin / "keep.txt").read_text(encoding="utf-8") == "keep\n"
+    assert not list((hermes_home / "plugins").glob(".powercontext*"))
+
+
+def test_setup_hermes_restores_both_plugins_when_enable_fails(tmp_path: Path, monkeypatch) -> None:
+    checkout = tmp_path / "powercontext"
+    _write_plugin(checkout)
+    hermes_home = tmp_path / "hermes"
+    old_provider = _write_installed_plugins(hermes_home)
+    old_command = hermes_home / "plugins" / "powercontext-command"
+    (old_provider / "version.txt").write_text("old provider\n", encoding="utf-8")
+    (old_command / "version.txt").write_text("old command\n", encoding="utf-8")
+    unrelated_plugin = hermes_home / "plugins" / "other-plugin"
+    unrelated_plugin.mkdir()
+    (unrelated_plugin / "keep.txt").write_text("keep\n", encoding="utf-8")
+    monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+    monkeypatch.setenv("POWERCONTEXT_HOME", str(tmp_path / "data"))
+    monkeypatch.setattr(hermes_cli, "which", lambda _name: "/usr/bin/hermes")
+    monkeypatch.setattr(hermes_cli.subprocess, "run", _successful_hermes_run)
+
+    enabled = False
+
+    def fail_enable(_executable: str, _name: str) -> None:
+        nonlocal enabled
+        enabled = True
+        raise SetupError
+
+    monkeypatch.setattr(hermes_cli, "_enable_hermes_plugin", fail_enable)
+
+    result = CliRunner().invoke(
+        create_cli([setup_app]),
+        ["setup", "hermes", "--source", str(checkout)],
+    )
+
+    assert result.exit_code == 1
+    assert enabled
+    assert (old_provider / "version.txt").read_text(encoding="utf-8") == "old provider\n"
+    assert (old_command / "version.txt").read_text(encoding="utf-8") == "old command\n"
+    assert (unrelated_plugin / "keep.txt").read_text(encoding="utf-8") == "keep\n"
+    assert not list((hermes_home / "plugins").glob(".powercontext*"))
 
 
 def test_setup_hermes_reports_missing_cli(tmp_path: Path, monkeypatch) -> None:

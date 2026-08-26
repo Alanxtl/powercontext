@@ -125,6 +125,55 @@ def parse_json_object(value: str, label: str) -> dict[str, Any]:
     return parsed
 
 
+def _quoted_argument_end(value: str) -> int:
+    """Return the end of the first shell-quoted argument in ``value``."""
+    if not value or value[0] not in {"'", '"'}:
+        raise ValueError("expected a quoted argument")  # noqa: TRY003
+    quote = value[0]
+    escaped = False
+    for index, character in enumerate(value[1:], start=1):
+        if quote == '"' and escaped:
+            escaped = False
+            continue
+        if quote == '"' and character == "\\":
+            escaped = True
+            continue
+        if character == quote:
+            return index + 1
+    raise ValueError("unterminated quoted JSON argument")  # noqa: TRY003
+
+
+def _split_json_argument(raw_args: str, command: str, label: str) -> tuple[str, str]:
+    """Extract one JSON object from a command and return it with its tail.
+
+    ``shlex.split`` cannot be used on the complete command first because it
+    treats the whitespace and quotes inside an unwrapped JSON object as shell
+    syntax.  Decode the JSON prefix from the raw string, then tokenize only
+    the arguments that follow it.  A shell-quoted JSON object remains accepted
+    for compatibility with the previous command syntax.
+    """
+    text = raw_args.strip()
+    tail = text[len(command) :].lstrip()
+    if not tail:
+        raise ValueError(f"{label} must be a JSON object")  # noqa: TRY003
+
+    if tail[0] in {"'", '"'}:
+        end = _quoted_argument_end(tail)
+        tokens = shlex.split(tail[:end])
+        if len(tokens) != 1:
+            raise ValueError(f"{label} must be a JSON object")  # noqa: TRY003
+        json_text = tokens[0]
+    else:
+        try:
+            _parsed, end = json.JSONDecoder().raw_decode(tail)
+        except json.JSONDecodeError as error:
+            raise ValueError(f"{label} must be a JSON object") from error  # noqa: TRY003
+        json_text = tail[:end]
+
+    parse_json_object(json_text, label)
+    return json_text, tail[end:].lstrip()
+
+
 def workstream_command(provider: Any, args: list[str]) -> str:
     action = args[0].lower() if args else "status"
     if action == "status":
@@ -148,7 +197,7 @@ def workstream_command(provider: Any, args: list[str]) -> str:
         from .helpers import safe_scope
 
         provider._workstream_bound_scope = safe_scope(args[1])
-        provider._scope_id = provider._workstream_bound_scope
+        provider._switch_workstream_scope(provider._workstream_bound_scope)
         provider._record_trace_event("workstream_bound", scope_id=provider._scope_id, path=str(path))
         return json.dumps(
             {"status": "bound", "scope_id": provider._scope_id, "path": str(path)},
@@ -338,8 +387,13 @@ def handle_slash_command(provider: Any, raw_args: str) -> str:  # noqa: C901
             logger.debug("PowerContext /pc command failed: %s", error)
             return tool_error(f"PowerContext operation failed: {error}")
     try:
-        args = shlex.split(raw_args)
-    except ValueError as error:
+        command = raw_parts[0].lower() if raw_parts else ""
+        if command in {"get", "revise", "retire"}:
+            citation, remainder = _split_json_argument(raw_args, raw_parts[0], "citation")
+            args = [command, citation, *shlex.split(remainder)]
+        else:
+            args = shlex.split(raw_args)
+    except (ValueError, TypeError) as error:
         return tool_error(f"Invalid /pc arguments: {error}")
     if not args or args[0].lower() in {"help", "-h", "--help"}:
         return (

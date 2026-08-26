@@ -228,7 +228,7 @@ def test_evaluation_trace_slash_command_reads_named_session(tmp_path, hermes_mod
     assert remaining_sessions == []
 
 
-def test_register_exposes_powercontext_slash_command_aliases(hermes_modules):
+def test_register_does_not_install_session_bound_slash_handlers(hermes_modules):
     provider_module, _cli_module = hermes_modules
 
     class Context:
@@ -250,12 +250,7 @@ def test_register_exposes_powercontext_slash_command_aliases(hermes_modules):
     provider_module.register(context)
 
     assert context.provider is not None
-    assert set(context.commands) >= {"pc", "powercontext"}
-    assert "handoff" in context.commands["pc"][1]["args_hint"]
-    pc_handler = context.commands["pc"][0]
-    alias_handler = context.commands["powercontext"][0]
-    assert alias_handler.__self__ is pc_handler.__self__
-    assert alias_handler.__func__ is pc_handler.__func__
+    assert context.commands == {}
     assert "powercontext" in context.skills
 
 
@@ -319,6 +314,71 @@ def test_standalone_command_companion_registers_before_agent_and_forwards():
             },
         )()
         assert handler("status") == "handled: status"
+    finally:
+        sys.modules.pop(module_name, None)
+
+
+def test_standalone_command_companion_keeps_interleaved_sessions_isolated():
+    module_name = "plugins.powercontext_command_isolation_test"
+    module_path = HERMES_ROOT / "plugins" / "powercontext-command" / "__init__.py"
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+
+        class Provider:
+            name = "powercontext"
+
+            def __init__(self, scope_id):
+                self.scope_id = scope_id
+                self.calls = []
+
+            def handle_slash_command(self, raw_args):
+                self.calls.append(raw_args)
+                return self.scope_id
+
+        class Context:
+            def __init__(self):
+                self.commands = {}
+                self._manager: Any = type("Manager", (), {"_cli_ref": None})()
+
+            def register_command(self, name, handler, **kwargs):
+                self.commands[name] = (handler, kwargs)
+
+        context = Context()
+        module.register(context)
+        handler = context.commands["pc"][0]
+        alice = Provider("review:alice")
+        bob = Provider("review:bob")
+
+        def activate(provider):
+            context._manager._cli_ref = type(
+                "Cli",
+                (),
+                {
+                    "agent": type(
+                        "Agent",
+                        (),
+                        {"_memory_manager": type("MemoryManager", (), {"providers": [provider]})()},
+                    )()
+                },
+            )()
+
+        for provider in (alice, bob, alice, bob):
+            activate(provider)
+            assert handler("status") == provider.scope_id
+
+        assert alice.calls == ["status", "status"]
+        assert bob.calls == ["status", "status"]
+
+        # Gateway dispatch has no caller context in Hermes v0.20.4. It must
+        # not reuse whichever interactive Agent happened to be active last.
+        context._manager._cli_ref = None
+        assert "not initialized" in handler("status").lower()
+        assert alice.calls == ["status", "status"]
+        assert bob.calls == ["status", "status"]
     finally:
         sys.modules.pop(module_name, None)
 
@@ -794,6 +854,46 @@ def test_extended_slash_commands_dispatch_json_operations(provider_and_client):
     assert [call[0] for call in client.calls] == ["request_operation", "request_operation"]
 
 
+def test_slash_commands_parse_unwrapped_citation_json_from_readme(provider_and_client):
+    provider, client = provider_and_client
+    citation = client.remember_memory(
+        provider._scope_id,
+        kind="preference",
+        text="The user prefers uv.",
+        reason="seed test citation",
+    )["entry"]["citation"]
+    citation_json = json.dumps(citation)
+    client.calls.clear()
+
+    fetched = json.loads(provider.handle_slash_command(f"get {citation_json}"))
+    revised = json.loads(
+        provider.handle_slash_command(
+            f'revise {citation_json} preference "The user prefers rye." "toolchain update"',
+        )
+    )
+    retired = json.loads(
+        provider.handle_slash_command(f'retire {citation_json} "no longer current"')
+    )
+
+    assert fetched["text"] == "a memory"
+    assert revised == {
+        "operation": "revise_memory_entry",
+        "payload": {
+            "citation": citation,
+            "kind": "preference",
+            "text": "The user prefers rye.",
+            "reason": "toolchain update",
+            "scope_id": provider._scope_id,
+        },
+    }
+    assert retired["status"] == "retired"
+    assert [call[0] for call in client.calls] == [
+        "get_memory_entry",
+        "request_operation",
+        "retire_memory_entry",
+    ]
+
+
 def test_workstream_binding_is_shared_with_hermes_scope(tmp_path, hermes_modules, monkeypatch):
     provider_module, _cli_module = hermes_modules
     git_directory = tmp_path / ".git"
@@ -824,6 +924,64 @@ def test_workstream_binding_is_shared_with_hermes_scope(tmp_path, hermes_modules
     status = json.loads(provider.handle_slash_command("workstream status"))
     assert status["bound_scope_id"] == "git:example/project"
     provider.shutdown()
+
+
+def test_workstream_bind_isolates_queued_background_work(tmp_path, hermes_modules, monkeypatch):
+    provider_module, _cli_module = hermes_modules
+    git_directory = tmp_path / ".git"
+    git_directory.mkdir()
+    workstream_module = importlib.import_module("plugins.powercontext.workstream")
+    monkeypatch.setattr(workstream_module, "git_value", lambda _cwd, *_args: str(git_directory))
+
+    client = FakeClient()
+    provider = provider_module.PowerContextMemoryProvider(
+        {"scope_id": "hermes:{profile}:{user_id}", "shutdown_timeout": 0.01},
+        client_factory=lambda _config: client,
+    )
+    provider.initialize(
+        "session-1",
+        hermes_home=str(tmp_path / "hermes"),
+        cwd=str(tmp_path),
+        agent_identity="coder",
+        user_id="user-7",
+    )
+    release = threading.Event()
+    started = threading.Event()
+    old_scope_id = provider._scope_id
+
+    def blocked_prepare(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        scope_id = args[0]
+        query = args[1]
+        client.calls.append(("prepare_context", (scope_id, query), {"max_bytes": kwargs["max_bytes"]}))
+        started.set()
+        release.wait(timeout=2)
+        return {"status": "ready", "content": f"context for {scope_id}"}
+
+    monkeypatch.setattr(client, "prepare_context", blocked_prepare)
+    try:
+        provider.queue_prefetch("same query")
+        assert started.wait(timeout=1)
+        provider.sync_turn("old user", "old assistant")
+
+        result = json.loads(provider.handle_slash_command("workstream bind new:scope"))
+        assert result["status"] == "bound"
+        assert provider._scope_id == "new:scope"
+        assert provider._prefetch_cache == {}
+
+        release.set()
+        provider._config["shutdown_timeout"] = 1.0
+        provider._wait_for_background()
+
+        capture_calls = [call for call in client.calls if call[0] == "capture_content"]
+        assert capture_calls == []
+
+        recalled = provider.prefetch("same query")
+        assert "context for new:scope" in recalled
+        prepare_calls = [call for call in client.calls if call[0] == "prepare_context"]
+        assert [call[1][0] for call in prepare_calls] == [old_scope_id, "new:scope"]
+    finally:
+        release.set()
+        provider.shutdown()
 
 
 def test_backend_failure_fails_open(provider_and_client):

@@ -19,6 +19,12 @@ provider.  Hermes loads that provider when it creates an Agent, which is too
 late for the TUI's initial slash-command registry.  This small standalone
 companion registers the command during normal plugin discovery and forwards to
 the active provider once an Agent exists.
+
+Hermes v0.20.4 invokes plugin command handlers with raw arguments only.  The
+gateway does not provide the caller's session, user, workspace, or scope to
+the handler, so this companion only dispatches through Hermes' interactive CLI
+reference.  Gateway invocations fail closed instead of selecting a provider
+from another session.
 """
 
 from __future__ import annotations
@@ -55,7 +61,12 @@ _NOT_INITIALIZED = (
 
 
 def _active_provider(context: Any) -> Any | None:
-    """Return the active PowerContext provider from the current CLI Agent."""
+    """Return the provider for Hermes' current interactive CLI Agent.
+
+    ``_cli_ref`` is set by the interactive CLI and is ``None`` in the gateway,
+    where Hermes v0.20.4 does not expose the invoking session to plugin
+    commands.  Do not fall back to a cached or process-global provider.
+    """
 
     manager = getattr(context, "_manager", None)
     cli = getattr(manager, "_cli_ref", None)

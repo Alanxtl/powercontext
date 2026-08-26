@@ -61,30 +61,15 @@ def install_hermes_plugin(*, source: str, ref: str) -> HermesSetupResult:
 
     plugin_dir, command_plugin_dir = resolve_hermes_plugin_dirs(source=source, ref=ref)
     home = hermes_home()
-    target = home / "plugins" / HERMES_PLUGIN_NAME
-    command_target = home / "plugins" / HERMES_COMMAND_PLUGIN_NAME
+    plugins_root = home / "plugins"
+    target = plugins_root / HERMES_PLUGIN_NAME
+    command_target = plugins_root / HERMES_COMMAND_PLUGIN_NAME
     try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        staged: list[tuple[Path, Path]] = []
-        try:
-            for source_dir, destination in (
-                (plugin_dir, target),
-                (command_plugin_dir, command_target),
-            ):
-                staging = _new_staging_directory(destination)
-                staged.append((staging, destination))
-                shutil.rmtree(staging)
-                shutil.copytree(source_dir, staging)
-                _run_plugin_doctor(executable, staging)
-
-            for staging, destination in staged:
-                _replace_directory(staging, destination)
-
-            _enable_hermes_plugin(executable, HERMES_COMMAND_PLUGIN_NAME)
-        except BaseException:
-            for staging, _destination in staged:
-                _remove_path(staging)
-            raise
+        _install_hermes_plugin_pair(
+            executable=executable,
+            plugins_root=plugins_root,
+            source_dirs=((plugin_dir, target), (command_plugin_dir, command_target)),
+        )
     except OSError as error:
         raise SetupError.hermes_plugin_write(target, error) from error
 
@@ -95,6 +80,65 @@ def install_hermes_plugin(*, source: str, ref: str) -> HermesSetupResult:
         data_dir=str(data_dir),
         command_plugin_path=str(command_target),
     )
+
+
+def _install_hermes_plugin_pair(
+    *,
+    executable: str,
+    plugins_root: Path,
+    source_dirs: tuple[tuple[Path, Path], ...],
+) -> None:
+    """Stage, validate, and transactionally install the Hermes plugin pair."""
+
+    plugins_root.mkdir(parents=True, exist_ok=True)
+    staged = _stage_hermes_plugins(executable, source_dirs)
+    try:
+        _commit_hermes_plugins(executable, staged)
+    finally:
+        for staging, _target in staged:
+            _remove_path(staging)
+
+
+def _stage_hermes_plugins(
+    executable: str,
+    source_dirs: tuple[tuple[Path, Path], ...],
+) -> list[tuple[Path, Path]]:
+    staged: list[tuple[Path, Path]] = []
+    try:
+        for source_dir, target in source_dirs:
+            staging = _new_staging_directory(target)
+            staged.append((staging, target))
+            _remove_path(staging)
+            shutil.copytree(source_dir, staging)
+            _run_plugin_doctor(executable, staging)
+    except BaseException:
+        for staging, _target in staged:
+            _remove_path(staging)
+        raise
+    return staged
+
+
+def _commit_hermes_plugins(executable: str, staged: list[tuple[Path, Path]]) -> None:
+    backups: list[tuple[Path, Path]] = []
+    installed: list[Path] = []
+    try:
+        for staging, target in staged:
+            backup = _backup_directory(target)
+            if backup is not None:
+                backups.append((target, backup))
+            os.replace(staging, target)
+            installed.append(target)
+        _enable_hermes_plugin(executable, HERMES_COMMAND_PLUGIN_NAME)
+    except BaseException:
+        for target in reversed(installed):
+            _remove_path(target)
+        for target, backup in reversed(backups):
+            if _path_exists(backup):
+                os.replace(backup, target)
+        raise
+    else:
+        for _target, backup in backups:
+            _remove_path(backup)
 
 
 def resolve_hermes_plugin_dir(*, source: str, ref: str) -> Path:
@@ -267,13 +311,6 @@ def _is_hermes_plugin(path: Path) -> bool:
     return (path / "__init__.py").is_file() and (path / "plugin.yaml").is_file()
 
 
-def _usable_checkout(target: Path) -> bool:
-    if _is_hermes_plugin(target):
-        return _is_hermes_plugin(target.parent / HERMES_COMMAND_PLUGIN_NAME)
-    provider = target / HERMES_PLUGIN_RELATIVE
-    return _is_hermes_plugin(provider) and _is_hermes_plugin(provider.parent / HERMES_COMMAND_PLUGIN_NAME)
-
-
 def _materialize_remote_checkout(source: str, ref: str) -> Path:
     target = checkout_target(source, ref)
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -367,21 +404,33 @@ def _new_staging_directory(target: Path) -> Path:
     return Path(tempfile.mkdtemp(prefix=f".{target.name}-", dir=target.parent))
 
 
+def _backup_directory(target: Path) -> Path | None:
+    if not _path_exists(target):
+        return None
+    backup = target.with_name(f".{target.name}.backup-{uuid.uuid4().hex}")
+    os.replace(target, backup)
+    return backup
+
+
 def _replace_directory(staging: Path, target: Path) -> None:
     backup = target.with_name(f".{target.name}.backup-{uuid.uuid4().hex}")
     moved_old = False
     try:
-        if target.exists() or target.is_symlink():
+        if _path_exists(target):
             os.replace(target, backup)
             moved_old = True
         os.replace(staging, target)
     except BaseException:
-        if moved_old and not (target.exists() or target.is_symlink()) and backup.exists():
+        if moved_old and not _path_exists(target) and _path_exists(backup):
             os.replace(backup, target)
         raise
     finally:
         _remove_path(staging)
         _remove_path(backup)
+
+
+def _path_exists(path: Path) -> bool:
+    return path.exists() or path.is_symlink()
 
 
 def _remove_path(path: Path) -> None:

@@ -25,7 +25,6 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from . import commands
 from .client import PowerContextClient, PowerContextError
 from .provider import PowerContextMemoryProvider
 
@@ -48,7 +47,14 @@ def _load_plugin_config() -> dict[str, Any]:
 
 
 def register(ctx) -> None:
-    """Register PowerContext with Hermes' memory provider registry and slash commands."""
+    """Register PowerContext with Hermes' memory provider registry.
+
+    Slash commands are registered by the standalone ``powercontext-command``
+    companion.  An exclusive memory provider can be initialized once per
+    Agent, while Hermes stores slash-command handlers on a process-global
+    registry; registering a provider-bound method here would therefore route
+    one session's command to another session's scope.
+    """
     provider = PowerContextMemoryProvider(_load_plugin_config())
     ctx.register_memory_provider(provider)
     register_skill = getattr(ctx, "register_skill", None)
@@ -59,16 +65,6 @@ def register(ctx) -> None:
             skill_path,
             "Use PowerContext memory, continuity, and review operations safely.",
         )
-    register_command = getattr(ctx, "register_command", None)
-    if callable(register_command):
-        for name in ("pc", "powercontext"):
-            register_command(
-                name,
-                provider.handle_slash_command,
-                description="Inspect and manage PowerContext memory, handoffs, artifacts, and traces.",
-                args_hint="status|search|list|changes|get|remember|revise|retire|flush|stats|handoff|experience|skill|external-skills|review|workstream|trace|call ...",
-            )
-    commands.register_subcommands()
 
 
 __all__ = ["PowerContextClient", "PowerContextError", "PowerContextMemoryProvider", "register"]

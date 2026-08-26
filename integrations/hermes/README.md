@@ -13,7 +13,7 @@ With Hermes installed and available on `PATH`, install or refresh the provider
 from the matching PowerContext release tag:
 
 ```bash
-powercontext setup hermes --source oceanbase/powercontext --ref v0.0.2
+powercontext setup hermes --source oceanbase/powercontext --ref latest
 ```
 
 The command copies the exclusive memory provider to
@@ -168,8 +168,15 @@ Memory entries.
 
 The standalone companion registers `/pc` and `/powercontext` during normal
 Hermes plugin discovery, before the first Agent is created. Both aliases are
-handled by the PowerContext Memory Provider once it is active. Type `/pc ` or
-`/powercontext ` and press Tab/Down to see the available first-level commands:
+forwarded to the PowerContext Memory Provider for the current interactive
+Hermes Agent once it is active. Type `/pc ` or `/powercontext ` and press
+Tab/Down to see the available first-level commands:
+
+Hermes v0.20.4 does not pass gateway session, user, workspace, or scope
+context to plugin slash-command handlers. The companion therefore fails closed
+for gateway invocations instead of routing a command to another session's
+PowerContext scope. Use the provider's Hermes tools for gateway sessions until
+Hermes exposes that invocation context.
 
 ```text
 /pc trace status
@@ -195,6 +202,69 @@ handled by the PowerContext Memory Provider once it is active. Type `/pc ` or
 /pc workstream {status|bind SCOPE_ID|clear}
 /pc call OPERATION [PAYLOAD_JSON]
 ```
+
+### Read, revise, or retire a memory entry
+
+`/pc get` and `/pc retire` do not accept a search keyword or a bare
+`entry_id`. They require the complete `citation` object returned by
+`/pc search`, including the current Memory revision and the entry version.
+Copy only the `hits[].citation` value from the search response, not the whole
+hit object.
+
+For example, first write a memory entry and then search for it:
+
+```text
+/pc remember preference "Prefers uv for Python project management"
+/pc search uv
+```
+
+The relevant part of the `/pc search uv` response includes both the returned
+text and the citation needed by the exact-entry commands. The identifiers and
+revision below are illustrative; always copy them from the current response:
+
+```json
+{
+  "memory": {
+    "family": "memory",
+    "artifact_id": "memory",
+    "revision": 2
+  },
+  "mode": "fts",
+  "hits": [
+    {
+      "citation": {
+        "memory_ref": {
+          "family": "memory",
+          "artifact_id": "memory",
+          "revision": 2
+        },
+        "entry_id": "mem_ent_8f9653d66a664398aa18bc5c88e0283d",
+        "entry_version_id": "mem_ver_b12a8e6434254cae8a747792905006ed"
+      },
+      "text": "Prefers uv for Python project management (venv, dependency resolution, lockfile) over pip/Poetry/pip-tools."
+    }
+  ]
+}
+```
+
+Copy the `hits[0].citation` object from the actual response and use it as
+follows:
+
+```text
+/pc get {"memory_ref":{"family":"memory","artifact_id":"memory","revision":2},"entry_id":"mem_ent_8f9653d66a664398aa18bc5c88e0283d","entry_version_id":"mem_ver_b12a8e6434254cae8a747792905006ed"}
+/pc retire {"memory_ref":{"family":"memory","artifact_id":"memory","revision":2},"entry_id":"mem_ent_8f9653d66a664398aa18bc5c88e0283d","entry_version_id":"mem_ver_b12a8e6434254cae8a747792905006ed"} "no longer needed"
+```
+
+To revise instead of retiring, use the same citation with:
+
+```text
+/pc revise {"memory_ref":{"family":"memory","artifact_id":"memory","revision":2},"entry_id":"mem_ent_8f9653d66a664398aa18bc5c88e0283d","entry_version_id":"mem_ver_b12a8e6434254cae8a747792905006ed"} preference "Prefers uv for Python project management" "updated preference"
+```
+
+`retire` is a logical retirement; it removes the entry from active memory but
+keeps its history. Because every memory mutation advances the artifact
+revision, do not reuse this citation after `revise` or another write. Search
+again and use the newest citation before the next `get`, `revise`, or `retire`.
 
 Trace enable/disable changes the current Hermes process only. Configure
 `evaluation_trace` or `POWERCONTEXT_HERMES_EVALUATION_TRACE` when tracing should

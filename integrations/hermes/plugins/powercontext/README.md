@@ -13,7 +13,7 @@ provider configuration is read from `$HERMES_HOME/powercontext/config.json`.
 To install or refresh the provider from a matching PowerContext release tag:
 
 ```bash
-powercontext setup hermes --source oceanbase/powercontext --ref v0.0.2
+powercontext setup hermes --source oceanbase/powercontext --ref latest
 powercontext doctor hermes
 ```
 
@@ -75,8 +75,14 @@ command can inspect, create, or clear the binding.
 The standalone companion registers `/pc` and `/powercontext` during normal
 Hermes plugin discovery, so both aliases are known before the first Agent is
 created. Type `/pc ` or `/powercontext ` and press Tab/Down to see the
-available first-level PowerContext commands. Once this provider is active, it
-handles either command:
+available first-level PowerContext commands. Once this provider is active, the
+companion forwards either command to the current interactive Hermes Agent.
+
+Hermes v0.20.4 does not pass gateway session, user, workspace, or scope
+context to plugin slash-command handlers. The companion consequently fails
+closed for gateway invocations rather than selecting another session's
+provider. Use the provider's Hermes tools for gateway sessions until Hermes
+exposes that invocation context.
 
 ```text
 /pc trace status
@@ -102,6 +108,9 @@ handles either command:
 /pc workstream {status|bind SCOPE_ID|clear}
 /pc call OPERATION [PAYLOAD_JSON]
 ```
+
+For the required citation format and copy-paste examples for `/pc get`,
+`/pc revise`, and `/pc retire`, see the [memory entry operation guide](../../README.md#read-revise-or-retire-a-memory-entry).
 
 ## CLI commands
 
