@@ -41,6 +41,7 @@ nav = [
         ] },
         { "Development" = [
             { "Core Protocol" = "en/development/core-protocol.md" },
+            { "Host Integration Contract" = "en/development/plugin-contract.md" },
             { "Memory Layer" = "en/development/memory-layer.md" },
             { "Pydantic AI Inference" = "en/development/pydantic-ai-inference.md" },
             { "Remote Access Implementation" = "en/development/remote-access-implementation.md" },
@@ -113,6 +114,7 @@ nav = [
         ] },
         { "开发" = [
             { "Core Protocol" = "zh/development/core-protocol.md" },
+            { "宿主集成契约" = "zh/development/plugin-contract.md" },
             { "Memory Layer" = "zh/development/memory-layer.md" },
             { "Pydantic AI 推理" = "zh/development/pydantic-ai-inference.md" },
             { "远程访问实现" = "zh/development/remote-access-implementation.md" },
