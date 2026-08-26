@@ -996,13 +996,17 @@ def test_backend_failure_fails_open(provider_and_client, caplog):
         assert provider.prefetch("query") == ""
         assert provider.prefetch("query") == ""
 
-    diagnostics = [json.loads(record.message) for record in caplog.records if record.name == "plugins.powercontext.provider"]
-    assert diagnostics == [{
-        "component": "powercontext.hermes",
-        "event": "context_prepare",
-        "outcome": "server_unavailable",
-        "recovery": "powercontext doctor",
-    }]
+    diagnostics = [
+        json.loads(record.message) for record in caplog.records if record.name == "plugins.powercontext.provider"
+    ]
+    assert diagnostics == [
+        {
+            "component": "powercontext.hermes",
+            "event": "context_prepare",
+            "outcome": "server_unavailable",
+            "recovery": "powercontext doctor",
+        }
+    ]
 
 
 def test_tool_failure_fails_open_and_emits_diagnostic(provider_and_client, caplog):
@@ -1020,13 +1024,17 @@ def test_tool_failure_fails_open_and_emits_diagnostic(provider_and_client, caplo
         second = json.loads(provider.handle_tool_call("powercontext_search_memory", {"query": "deployment"}))
 
     assert first == second == {"error": "PowerContext operation failed: offline"}
-    diagnostics = [json.loads(record.message) for record in caplog.records if record.name == "plugins.powercontext.provider"]
-    assert diagnostics == [{
-        "component": "powercontext.hermes",
-        "event": "tool_call",
-        "outcome": "server_unavailable",
-        "recovery": "powercontext doctor",
-    }]
+    diagnostics = [
+        json.loads(record.message) for record in caplog.records if record.name == "plugins.powercontext.provider"
+    ]
+    assert diagnostics == [
+        {
+            "component": "powercontext.hermes",
+            "event": "tool_call",
+            "outcome": "server_unavailable",
+            "recovery": "powercontext doctor",
+        }
+    ]
 
 
 def test_cli_registers_provider_commands(hermes_modules):
