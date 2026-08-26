@@ -1,0 +1,63 @@
+/*
+ * Copyright (c) 2026 OceanBase.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import { PowerContextRequestError } from './http.js'
+
+export interface DiagnosticEvent {
+  event: string
+  outcome: string
+  http_status?: number
+  recovery?: string
+  [key: string]: unknown
+}
+
+export function failureEvent(event: string, error: unknown): DiagnosticEvent {
+  if (error instanceof PowerContextRequestError) {
+    if (error.status === 401) return { event, outcome: 'authentication_failed', http_status: 401 }
+    if (error.status === 404) return { event, outcome: 'version_mismatch', http_status: 404 }
+    if (error.status === 503) {
+      return { event, outcome: 'server_unavailable', http_status: 503, recovery: 'powercontext doctor' }
+    }
+    if (error.status !== undefined) return { event, outcome: 'invalid_response', http_status: error.status }
+    return { event, outcome: 'server_unavailable', recovery: 'powercontext doctor' }
+  }
+  return { event, outcome: 'invalid_response' }
+}
+
+export function createDiagnosticEmitter(
+  write: (line: string) => void,
+  now: () => number = Date.now,
+  cooldownMs = 60_000,
+): (event: Record<string, unknown>) => void {
+  const lastEmitted = new Map<string, number>()
+  return (event) => {
+    const outcome = typeof event.outcome === 'string' ? event.outcome : undefined
+    const normalized = {
+      ...event,
+      ...(outcome === 'server_unavailable' && event.recovery === undefined
+        ? { recovery: 'powercontext doctor' }
+        : {}),
+    }
+    if (outcome && !['ready', 'ok', 'empty', 'skipped'].includes(outcome)) {
+      const key = outcome
+      const timestamp = now()
+      const previous = lastEmitted.get(key)
+      if (previous !== undefined && timestamp - previous < cooldownMs) return
+      lastEmitted.set(key, timestamp)
+    }
+    write(JSON.stringify(normalized))
+  }
+}

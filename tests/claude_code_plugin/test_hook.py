@@ -434,6 +434,8 @@ def test_http_failures_are_non_blocking_and_content_free(
     diagnostic = json.loads(errors.getvalue())
     assert diagnostic["outcome"] == outcome
     assert diagnostic["http_status"] == status
+    if outcome == "server_unavailable":
+        assert diagnostic["recovery"] == "powercontext doctor"
     assert "secret" not in errors.getvalue()
 
 

@@ -65,10 +65,16 @@ describe('runRecallPreStep fail-open', () => {
       if (operationId === 'prepare_context') throw new UnavailableError('/v1/context/prepare')
       return { kind: 'json', value: { status: 'accepted' }, status: 202, requestId: undefined }
     })
-    const result = await runRecallPreStep(input({ next, client: { request } as never }))
+    const log = vi.fn()
+    const result = await runRecallPreStep(input({ next, client: { request } as never, log }))
     expect(next).toHaveBeenCalledOnce()
     expect(result).toEqual({ kind: 'enter', messages: [{ id: 'user' }] })
     expect(request).toHaveBeenCalled()
+    expect(log).toHaveBeenCalledWith({
+      event: 'context_prepare',
+      outcome: 'server_unavailable',
+      recovery: 'powercontext doctor',
+    })
   })
 
   it('does not throw when next is reached after an invalid prepare payload', async () => {

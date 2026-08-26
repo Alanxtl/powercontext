@@ -982,7 +982,7 @@ def test_workstream_bind_isolates_queued_background_work(tmp_path, hermes_module
         provider.shutdown()
 
 
-def test_backend_failure_fails_open(provider_and_client):
+def test_backend_failure_fails_open(provider_and_client, caplog):
     provider, client = provider_and_client
 
     def failed_prepare(*args, **kwargs):
@@ -992,7 +992,17 @@ def test_backend_failure_fails_open(provider_and_client):
 
     client.prepare_context = failed_prepare
 
-    assert provider.prefetch("query") == ""
+    with caplog.at_level(logging.WARNING, logger="plugins.powercontext.provider"):
+        assert provider.prefetch("query") == ""
+        assert provider.prefetch("query") == ""
+
+    diagnostics = [json.loads(record.message) for record in caplog.records if record.name == "plugins.powercontext.provider"]
+    assert diagnostics == [{
+        "component": "powercontext.hermes",
+        "event": "context_prepare",
+        "outcome": "server_unavailable",
+        "recovery": "powercontext doctor",
+    }]
 
 
 def test_cli_registers_provider_commands(hermes_modules):

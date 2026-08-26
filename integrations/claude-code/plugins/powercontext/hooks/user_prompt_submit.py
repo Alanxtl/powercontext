@@ -55,6 +55,7 @@ _REQUEST_HEADERS = {
     "Content-Type": "application/json",
     "User-Agent": "powercontext-claude-code-plugin/0.1.0",
 }
+_FAILURE_OUTCOMES = frozenset({"authentication_failed", "version_mismatch", "server_unavailable", "invalid_response"})
 
 
 class _Response(Protocol):
@@ -109,6 +110,7 @@ def main(settings: ClaudeCodePluginSettings | None = None) -> int:
             payload = cast(dict[str, Any], json.load(stdin))
         if not _is_user_prompt_submit(payload.get("hook_event_name")):
             return 0
+        emitted_diagnostics: set[str] = set()
         prompt = _prompt(payload)
         cwd = payload.get("cwd")
         if prompt is None or not prompt.strip() or not isinstance(cwd, str):
@@ -124,10 +126,11 @@ def main(settings: ClaudeCodePluginSettings | None = None) -> int:
                 scope_id,
                 settings=settings,
                 deadline=http_deadline,
+                emitted_diagnostics=emitted_diagnostics,
             )
 
         if settings.capture_prompts and len(prompt) <= _MAX_SOURCE_LENGTH:
-            with suppress(Exception):
+            try:
                 captured = _capture_prompt(
                     payload,
                     prompt=prompt,
@@ -143,6 +146,8 @@ def main(settings: ClaudeCodePluginSettings | None = None) -> int:
                         settings=settings,
                         deadline=http_deadline,
                     )
+            except Exception as error:
+                _emit_failure_event("capture_source", error, emitted_diagnostics=emitted_diagnostics)
 
         if context:
             json.dump(
@@ -340,6 +345,7 @@ def _recall_context(
     *,
     settings: ClaudeCodePluginSettings,
     deadline: float,
+    emitted_diagnostics: set[str] | None = None,
 ) -> str | None:
     try:
         prepared = _validate_prepared_context(_prepare_context(query, scope_id, settings=settings, deadline=deadline))
@@ -352,13 +358,22 @@ def _recall_context(
             outcome = "server_unavailable"
         else:
             outcome = "invalid_response"
-        _emit_context_event(outcome, http_status=error.status)
+        _emit_context_event(
+            outcome,
+            http_status=error.status,
+            recovery="powercontext doctor" if outcome == "server_unavailable" else None,
+            emitted_diagnostics=emitted_diagnostics,
+        )
         return None
     except (_ServerUnavailableError, TimeoutError):
-        _emit_context_event("server_unavailable")
+        _emit_context_event(
+            "server_unavailable",
+            recovery="powercontext doctor",
+            emitted_diagnostics=emitted_diagnostics,
+        )
         return None
     except _InvalidResponseError:
-        _emit_context_event("invalid_response")
+        _emit_context_event("invalid_response", emitted_diagnostics=emitted_diagnostics)
         return None
 
     status = cast(str, prepared["status"])
@@ -372,13 +387,21 @@ def _recall_context(
 def _emit_context_event(
     outcome: str,
     *,
+    event_name: str = "context_prepare",
     http_status: int | None = None,
     context_status: str | None = None,
     content_bytes: int | None = None,
+    recovery: str | None = None,
+    emitted_diagnostics: set[str] | None = None,
 ) -> None:
+    if emitted_diagnostics is not None and outcome in _FAILURE_OUTCOMES:
+        key = outcome
+        if key in emitted_diagnostics:
+            return
+        emitted_diagnostics.add(key)
     event: dict[str, object] = {
         "component": "powercontext.claude_code.recall",
-        "event": "context_prepare",
+        "event": event_name,
         "outcome": outcome,
     }
     if http_status is not None:
@@ -387,7 +410,46 @@ def _emit_context_event(
         event["context_status"] = context_status
     if content_bytes is not None:
         event["content_bytes"] = content_bytes
+    if recovery is not None:
+        event["recovery"] = recovery
     sys.stderr.write(json.dumps(event, separators=(",", ":")) + "\n")
+
+
+def _emit_failure_event(
+    event_name: str,
+    error: BaseException,
+    *,
+    emitted_diagnostics: set[str],
+) -> None:
+    if isinstance(error, _HttpStatusError):
+        if error.status == 401:
+            outcome = "authentication_failed"
+        elif error.status == 404:
+            outcome = "version_mismatch"
+        elif error.status == 503:
+            outcome = "server_unavailable"
+        else:
+            outcome = "invalid_response"
+        _emit_context_event(
+            outcome,
+            event_name=event_name,
+            http_status=error.status,
+            recovery="powercontext doctor" if outcome == "server_unavailable" else None,
+            emitted_diagnostics=emitted_diagnostics,
+        )
+    elif isinstance(error, (_ServerUnavailableError, TimeoutError)):
+        _emit_context_event(
+            "server_unavailable",
+            event_name=event_name,
+            recovery="powercontext doctor",
+            emitted_diagnostics=emitted_diagnostics,
+        )
+    else:
+        _emit_context_event(
+            "invalid_response",
+            event_name=event_name,
+            emitted_diagnostics=emitted_diagnostics,
+        )
 
 
 if __name__ == "__main__":

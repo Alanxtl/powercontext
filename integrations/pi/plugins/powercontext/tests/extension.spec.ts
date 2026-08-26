@@ -89,6 +89,7 @@ describe('PowerContext Pi extension', () => {
 
   it('continues without changing Pi when PowerContext is unavailable', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('network unavailable')))
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     const beforeAgentStart = installExtension().get('before_agent_start')
 
     await expect(beforeAgentStart?.({
@@ -101,6 +102,10 @@ describe('PowerContext Pi extension', () => {
         getBranch: () => [],
       },
     })).resolves.toBeUndefined()
+    expect(warning).toHaveBeenCalledOnce()
+    expect(warning.mock.calls[0]?.[0]).toBe(
+      '{"component":"powercontext.pi","event":"context_prepare","outcome":"server_unavailable","recovery":"powercontext doctor"}',
+    )
   })
 
   it('keeps recalled context when independent prompt capture fails', async () => {

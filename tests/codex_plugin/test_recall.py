@@ -179,6 +179,7 @@ def test_recall_failure_is_non_blocking(
         "component": "powercontext.codex.recall",
         "event": "context_prepare",
         "outcome": "server_unavailable",
+        "recovery": "powercontext doctor",
     }
 
 

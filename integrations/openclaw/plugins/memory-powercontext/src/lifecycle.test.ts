@@ -18,7 +18,7 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
 import { describe, expect, it } from "vitest";
 import { resolvePowerContextConfig, resolvePowerContextScope } from "./config.js";
-import type { PowerContextClient } from "./http.js";
+import { PowerContextRequestError, type PowerContextClient } from "./http.js";
 import { registerPowerContextLifecycle } from "./lifecycle.js";
 
 type Hook = (event: unknown, context: unknown) => unknown;
@@ -31,6 +31,7 @@ function createLifecycleHarness() {
   const capturedScopes: string[] = [];
   const contextQueries: string[] = [];
   let memoryExtraction = true;
+  let contextPrepareError: unknown;
   const config = resolvePowerContextConfig(undefined, {
     endpoint: "http://powercontext.test",
     scopeMode: "project",
@@ -51,6 +52,9 @@ function createLifecycleHarness() {
       }
       if (path === "/v1/context/prepare") {
         contextQueries.push(String(body.query));
+        if (contextPrepareError) {
+          throw contextPrepareError;
+        }
       }
       return {
         schema: "powercontext.prepared-context.v1",
@@ -88,6 +92,9 @@ function createLifecycleHarness() {
     setMemoryExtraction(value: boolean) {
       memoryExtraction = value;
     },
+    setContextPrepareError(error: unknown) {
+      contextPrepareError = error;
+    },
     warnings,
   };
 }
@@ -123,6 +130,34 @@ describe("PowerContext lifecycle", () => {
       resolvePowerContextScope("main", harness.config, ["/workspace/project-b"]),
     ]);
     expect(harness.warnings).toEqual([]);
+  });
+
+  it("surfaces a bounded, content-free unavailable diagnostic", async () => {
+    const harness = createLifecycleHarness();
+    harness.setContextPrepareError(
+      new PowerContextRequestError("/v1/context/prepare", "do not expose this detail"),
+    );
+    const beforePromptBuild = harness.hooks.get("before_prompt_build");
+    const context = {
+      agentId: "main",
+      sessionId: "session-diagnostic",
+      sessionKey: "agent:main:telegram:direct:user-1",
+    };
+
+    await beforePromptBuild!(
+      { messages: [{ role: "user", content: "first request" }], prompt: "" },
+      context,
+    );
+    await beforePromptBuild!(
+      { messages: [{ role: "user", content: "second request" }], prompt: "" },
+      context,
+    );
+
+    expect(harness.warnings).toHaveLength(1);
+    expect(harness.warnings[0]).toBe(
+      '{"component":"powercontext.openclaw","event":"context_prepare","outcome":"server_unavailable","recovery":"powercontext doctor"}',
+    );
+    expect(harness.warnings[0]).not.toContain("do not expose this detail");
   });
 
   it("bounds context queries by UTF-8 bytes", async () => {

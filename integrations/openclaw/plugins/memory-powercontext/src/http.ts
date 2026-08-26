@@ -31,10 +31,7 @@ export class PowerContextRequestError extends Error {
 
 export type PowerContextClient = ReturnType<typeof createPowerContextClient>;
 
-export function createPowerContextClient(
-  getConfig: () => PowerContextConfig,
-  log: (message: string) => void,
-) {
+export function createPowerContextClient(getConfig: () => PowerContextConfig) {
   async function request<T>(
     method: "GET" | "POST",
     path: string,
@@ -106,7 +103,6 @@ export function createPowerContextClient(
       if (error instanceof PowerContextRequestError) {
         throw error;
       }
-      log(`PowerContext request failed for ${path}: ${String(error)}`);
       throw new PowerContextRequestError(path, String(error));
     } finally {
       clearTimeout(timer);

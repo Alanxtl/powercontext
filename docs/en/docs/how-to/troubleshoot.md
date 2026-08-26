@@ -165,10 +165,39 @@ powercontext capabilities
 
 `Memory extraction: disabled` means the Server has no generation model.
 
+## Host-visible integration diagnostics
+
+The Codex, Claude Code, DSH, OpenClaw, Pi, and Hermes integrations are fail-open: a PowerContext outage does not
+block the host task. They also expose a bounded, content-free diagnostic through the host's supported channel:
+
+| Host | Diagnostic channel | Component |
+| --- | --- | --- |
+| Codex | Hook `stderr` | `powercontext.codex.recall` |
+| Claude Code | Hook `stderr` | `powercontext.claude_code.recall` |
+| DSH | Host logger warning | `powercontext.dsh` |
+| OpenClaw | Plugin logger warning | `powercontext.openclaw` |
+| Pi | Host terminal warning | `powercontext.pi` |
+| Hermes | Python host logger warning | `powercontext.hermes` |
+
+For example, a transport failure is reported as a single-line event such as:
+
+```json
+{"component":"powercontext.codex.recall","event":"context_prepare","outcome":"server_unavailable","recovery":"powercontext doctor"}
+```
+
+The stable outcomes remain distinct: `authentication_failed`, `version_mismatch`, `server_unavailable`, and
+`invalid_response`. Diagnostics never include prompts, recalled content, scopes, URLs, credentials, response bodies,
+or exception text. Repeated failures are deduplicated or throttled within the host process; a diagnostic failure never
+changes the host task result.
+
+Bub is not included in this first host-diagnostic slice. Its integration will be qualified separately when its host
+diagnostic channel and native lifecycle behavior are specified.
+
 ## The coding agent continues when the Server is down
 
-This is expected. The Codex, Claude Code, and Pi integrations fail open so a Memory outage cannot block ordinary work.
-Restart the Server to restore recall and capture; the existing database is reopened automatically.
+This is expected. The supported integrations fail open so a Memory outage cannot block ordinary work. Inspect the
+host-visible diagnostic and run `powercontext doctor`; restart the Server to restore recall and capture. The existing
+database is reopened automatically.
 
 ## Codex does not inject recalled context
 
@@ -228,7 +257,7 @@ powercontext doctor
 ```
 
 Restart Pi after installing the package or changing `POWERCONTEXT_PI_*` variables. In a new Pi session, run
-`/pc doctor` to check the configured Server directly. Recall is intentionally silent and fail-open: if the Server is
-unavailable, redirects, times out, or returns an invalid PreparedContext, Pi continues without adding context. Restore
-the Server, then run `powercontext capabilities` and confirm that Context versions lists
+`/pc doctor` to check the configured Server directly. Recall is fail-open and reports a content-free host terminal
+warning when the Server is unavailable, redirects, times out, or returns an invalid PreparedContext; Pi continues
+without adding context. Restore the Server, then run `powercontext capabilities` and confirm that Context versions lists
 `powercontext.prepared-context.v1`.

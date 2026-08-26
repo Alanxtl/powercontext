@@ -17,6 +17,7 @@
 import { createHash } from 'node:crypto'
 import type { PowerContextClient } from './client.ts'
 import type { ResolvedConfig } from './config.ts'
+import { failureEvent } from './diagnostics.ts'
 import { MAX_SOURCE_LENGTH } from './errors.ts'
 import { containsSecret } from './secrets.ts'
 
@@ -84,7 +85,7 @@ export async function captureUserPrompt(input: CaptureInput): Promise<void> {
       await flushThrough(input.client, input.config, input.scopeId, position, input.signal)
     }
     input.log({ event: 'capture_content_source', outcome: 'ok', status: result.status })
-  } catch {
-    input.log({ event: 'capture_content_source', outcome: 'failed' })
+  } catch (error) {
+    input.log(failureEvent('capture_content_source', error))
   }
 }
