@@ -173,6 +173,10 @@ class SetupError(RuntimeError):
         return cls(f"OpenCode Skill path {path} already exists and is not owned by PowerContext.")
 
     @classmethod
+    def opencode_plugin_conflict(cls, path: Path) -> SetupError:
+        return cls(f"OpenCode plugin path {path} already exists and is not owned by PowerContext.")
+
+    @classmethod
     def invalid_dsh_ref(cls, ref: str) -> SetupError:
         return cls(f"invalid DeepSeek Harness ref: {ref}")
 
