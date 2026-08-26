@@ -871,9 +871,7 @@ def test_slash_commands_parse_unwrapped_citation_json_from_readme(provider_and_c
             f'revise {citation_json} preference "The user prefers rye." "toolchain update"',
         )
     )
-    retired = json.loads(
-        provider.handle_slash_command(f'retire {citation_json} "no longer current"')
-    )
+    retired = json.loads(provider.handle_slash_command(f'retire {citation_json} "no longer current"'))
 
     assert fetched["text"] == "a memory"
     assert revised == {
