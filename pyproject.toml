@@ -130,6 +130,8 @@ python-version = "3.11"
 extra-paths = [
     "./integrations/claude-code/plugins/powercontext",
     "./integrations/codex/plugins/powercontext",
+    "./integrations/workbuddy/plugins/powercontext",
+    "./integrations/workbuddy/plugins/powercontext/hooks",
     "./integrations/pydantic-ai/src",
 ]
 
