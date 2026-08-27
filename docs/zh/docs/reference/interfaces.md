@@ -105,12 +105,22 @@ Pi transcript。召回、采集和边界 flush 都会正常降级；显式持久
 
 ```text
 powercontext setup codex
+powercontext setup claude-code
 powercontext setup dsh
+powercontext setup openclaw
+powercontext setup opencode
 powercontext setup pi
+powercontext setup hermes
+powercontext setup select
 powercontext doctor
+powercontext doctor integrations
 powercontext doctor codex
+powercontext doctor claude-code
 powercontext doctor dsh
+powercontext doctor openclaw
+powercontext doctor opencode
 powercontext doctor pi
+powercontext doctor hermes
 powercontext server run
 powercontext ready
 powercontext capabilities
@@ -130,9 +140,10 @@ powercontext external-skill import --scope-id project:example --fingerprint SHA2
 所有内容命令都调用已配置的 Server。可选的 `server` role 会增加 `powercontext server run`，但不会在 CLI
 中创建第二套内容 profile。
 
-`powercontext doctor` 检查安装包和 Server，不要求任何集成；`powercontext doctor codex` 显式检查 Codex CLI
-和 PowerContext 插件；`powercontext doctor dsh` 检查 DeepSeek Harness CLI，以及 dump-config 是否列出插件 id
-`powercontext-dsh`；`powercontext doctor pi` 检查 Pi 可执行文件，以及 Pi 是否列出了 PowerContext package。
+`powercontext doctor` 检查安装包和 Server，不要求任何集成。`powercontext doctor integrations` 打印全部一级宿主的只读矩阵；
+CLI 不在 PATH 上时该行是 `missing`，不会让整条命令失败。各个 `powercontext doctor <host>` 命令在对应 CLI
+缺失时仍会失败。矩阵保留每个宿主专有的全部集成检查，包括 OpenCode 独立的 `plugin` 与 `skill` 结果。
+DSH 检查 `dump-config` 是否列出 `powercontext-dsh`；Pi 检查 CLI 是否列出 PowerContext package。
 
 `candidate` 命令组提供面向人工的 Review Inbox。列出、检查、修订、批准和拒绝的操作步骤见
 [审核 Candidate](../how-to/review-candidates.md)。
