@@ -233,6 +233,7 @@ def workstream_command(provider: Any, args: list[str]) -> str:
     if action == "clear":
         cleared = clear_scope(provider._workstream_cwd)
         provider._workstream_bound_scope = ""
+        provider._switch_workstream_scope(provider._default_scope_id)
         provider._record_trace_event("workstream_cleared", cleared=cleared)
         return json.dumps({"status": "cleared" if cleared else "not_found"}, ensure_ascii=False, indent=2)
     return "Usage: /pc workstream {status|bind SCOPE_ID|clear}"

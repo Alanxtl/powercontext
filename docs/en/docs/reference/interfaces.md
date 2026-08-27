@@ -1,6 +1,6 @@
 ---
 title: Interfaces
-description: Choose between the Codex and Claude Code plugins, DeepSeek Harness plugin, Pi package, CLI, Python SDKs, HTTP, and MCP.
+description: Choose between Agent integrations, the CLI, Python SDKs, HTTP, and MCP.
 ---
 
 # Interfaces
@@ -10,7 +10,9 @@ All remote interfaces operate on the same Server and persistent Artifact storage
 | Interface | Intended use | Install |
 | --- | --- | --- |
 | Codex plugin | Cross-session recall and explicit Memory maintenance in Codex | `powercontext setup codex` |
+| Pydantic AI adapter | Memory tools, automatic context preparation, and optional trajectory capture | `powercontext-pydantic-ai` |
 | DeepSeek Harness plugin | Cross-session recall and explicit Memory maintenance in DeepSeek Harness | `powercontext setup dsh` |
+| LangChain middleware | Bounded recall and completed-turn Source capture in `create_agent` | `powercontext-langchain` |
 | LangGraph adapter | Memory tools and bounded recall inside a LangGraph graph | `powercontext-langgraph` |
 | Pi package | Cross-session recall, native Memory/Handoff tools, and skills in Pi | `powercontext setup pi` |
 | CLI | Setup, diagnostics, Server control, capability checks, and human Candidate review | `powercontext[cli,server]` |
@@ -71,6 +73,14 @@ The project-context skill tells DeepSeek Harness when to search, remember, revis
 step the plugin recalls relevant entries and captures user input as Source evidence. Named `pc_*` tools perform explicit
 HTTP operations. The plugin never starts or embeds the Server.
 
+## Pydantic AI adapter
+
+The independent `powercontext-pydantic-ai` distribution contributes three Memory tools through the public Python
+Client and can automatically prepend bounded `PreparedContext`. Optional capture stores redacted, bounded visible
+model and completed tool events, performs checkpoint Flush, and flushes remaining Sources after the run. MCP needs no
+adapter package but does not provide automatic context preparation, capture, or Flush. See
+[Configure Pydantic AI](../how-to/configure-pydantic-ai.md).
+
 ## LangGraph adapter
 
 `powercontext-langgraph` connects a LangGraph graph to a running Server through the public Python Client. It supplies
@@ -89,6 +99,15 @@ bounded recall only; automatic capture, checkpointing, and Handoff are out of sc
 implement `BaseStore`, whose get, upsert-by-key, and delete operations the Memory model does not provide. It never
 starts or embeds the Server.
 
+## LangChain middleware
+
+`PowerContextMiddleware` uses LangChain's `AgentMiddleware` API. It injects one bounded PreparedContext into each
+current model request without changing agent state. Automatic capture is disabled by default; pass `auto_capture=True`
+to capture the latest user message and final plain-text or structured answer as Content Source evidence after a
+successful run. Source-to-Memory activation remains a Server responsibility. Recall and capture fail open, and neither
+path starts or embeds the Server. It ships independently as `powercontext-langchain`; the LangGraph adapter remains a
+separate node-and-tool integration.
+
 ## Pi package
 
 The native Pi package supplies the `project-context` skill, named `pc_*` Memory and Handoff tools, and `/pc`
@@ -100,12 +119,22 @@ boundary flushing fail open; explicit durable writes require interactive confirm
 
 ```text
 powercontext setup codex
+powercontext setup claude-code
 powercontext setup dsh
+powercontext setup openclaw
+powercontext setup opencode
 powercontext setup pi
+powercontext setup hermes
+powercontext setup select
 powercontext doctor
+powercontext doctor integrations
 powercontext doctor codex
+powercontext doctor claude-code
 powercontext doctor dsh
+powercontext doctor openclaw
+powercontext doctor opencode
 powercontext doctor pi
+powercontext doctor hermes
 powercontext server run
 powercontext ready
 powercontext capabilities
@@ -125,10 +154,11 @@ powercontext external-skill import --scope-id project:example --fingerprint SHA2
 All content commands call the configured Server. The optional `server` role adds `powercontext server run`; it does
 not create a second content profile inside the CLI.
 
-`powercontext doctor` checks the package and Server without requiring an integration. `powercontext doctor codex`
-checks the Codex CLI and PowerContext plugin explicitly. `powercontext doctor dsh` checks the DeepSeek Harness CLI
-and that dump-config lists the plugin id `powercontext-dsh`. `powercontext doctor pi` checks the Pi executable and
-that Pi lists the PowerContext package.
+`powercontext doctor` checks the package and Server without requiring an integration. `powercontext doctor integrations`
+prints a read-only matrix for every first-class host; a missing CLI is `missing` and does not fail the command.
+Each `powercontext doctor <host>` command still fails when that host CLI is missing. The matrix preserves every
+host-specific integration check, including OpenCode's separate `plugin` and `skill` results. DSH checks that
+`dump-config` lists `powercontext-dsh`; Pi checks that the CLI lists the PowerContext package.
 
 The `candidate` command group exposes the human Review Inbox. See [Review Candidates](../how-to/review-candidates.md)
 for the ordered workflow to list, inspect, revise, approve, or reject Candidates.

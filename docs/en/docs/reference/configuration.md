@@ -35,6 +35,7 @@ Server settings use the `POWERCONTEXT_SERVER_` prefix.
 | `POWERCONTEXT_SERVER_MCP_PATH` | `/mcp` | MCP path |
 | `POWERCONTEXT_SERVER_AUTH_ENABLED` | `false` | Require one static bearer token for HTTP and MCP |
 | `POWERCONTEXT_SERVER_AUTH_TOKEN` | unset | Static bearer token; required when authentication is enabled |
+| `POWERCONTEXT_SERVER_ALLOW_UNAUTHENTICATED_NON_LOOPBACK` | `false` | Opt in to a non-loopback bind while authentication is disabled |
 | `POWERCONTEXT_SERVER_DASHBOARD_ENABLED` | `true` | Enable the Dashboard at the Server root path `/` |
 | `POWERCONTEXT_SERVER_DASHBOARD_SCOPES` | `[]` | JSON array of selectable Dashboard scopes |
 | `POWERCONTEXT_SERVER_LOGGING_LEVEL` | `INFO` | Operational log level |
@@ -56,8 +57,17 @@ Server settings use the `POWERCONTEXT_SERVER_` prefix.
 | `POWERCONTEXT_SERVER_EXTERNAL_SKILLS` | unset | JSON object containing the host identity and explicit Agent Skill targets |
 
 Static bearer authentication is disabled by default. When enabled, API and MCP requests must include
-`Authorization: Bearer <token>`; the liveness and readiness endpoints remain public. Plain HTTP should remain on a
-loopback address. Use TLS before exposing an authenticated Server over a network.
+`Authorization: Bearer <token>`; the liveness and readiness endpoints remain public. Plain HTTP is trusted only on a
+loopback address (`localhost`, `::1`, or any address in `127.0.0.0/8`). The Server refuses to start when it binds to a
+non-loopback address while authentication is disabled; either enable authentication, keep the bind on loopback, or,
+when TLS is terminated upstream or the network is otherwise controlled, set
+`POWERCONTEXT_SERVER_ALLOW_UNAUTHENTICATED_NON_LOOPBACK=true` to opt in explicitly. Use TLS before exposing an authenticated Server over a network.
+
+The Python Client and CLI apply the matching rule for outbound requests: a configured unencrypted `http://` Server URL is
+accepted only for loopback hosts, and the Client refuses to send any request -- authenticated or not -- over unencrypted
+non-loopback HTTP. Code whose `http://` base URL is only a routing label for a transport that is secure in practice (an
+in-process ASGI app, a Unix-domain socket, or a proxy that terminates TLS) must supply its own `http_client` and pass
+`trust_transport_security=True` explicitly.
 
 The Dashboard is enabled by default and shares the Server listener and port with the HTTP API and MCP. With no scopes
 configured, the page shows an empty state. Dashboard initialization failures are logged with their direct cause and do
@@ -100,7 +110,7 @@ Reranking is disabled by default. When enabled, the Runtime retrieves and fuses 
 uses the generation model at temperature zero to select no more than the search request's final `limit`. It does not
 change stored Memory or indexes. Provider and structured-output failures remain visible as inference errors; disable
 reranking when search must remain independent of model availability. See
-[RFC 0080](../../rfcs/0080_memory_search_reranking.md) for the algorithm, concurrency, and API boundaries.
+[RFC 0080](/en/rfcs/0080_memory_search_reranking/) for the algorithm, concurrency, and API boundaries.
 
 The same configured generation model gates explicit Experience generation, managed Skill generation and evolution,
 and external Skill import or fork. Without it, these operations return a capability error before persisting a

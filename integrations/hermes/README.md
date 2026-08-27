@@ -13,7 +13,7 @@ With Hermes installed and available on `PATH`, install or refresh the provider
 from the matching PowerContext release tag:
 
 ```bash
-powercontext setup hermes --source oceanbase/powercontext --ref latest
+powercontext setup hermes --source oceanbase/powercontext --ref master
 ```
 
 The command copies the exclusive memory provider to

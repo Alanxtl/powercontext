@@ -924,6 +924,47 @@ def test_workstream_binding_is_shared_with_hermes_scope(tmp_path, hermes_modules
     provider.shutdown()
 
 
+def test_workstream_clear_restores_default_scope(tmp_path, hermes_modules, monkeypatch):
+    provider_module, _cli_module = hermes_modules
+    git_directory = tmp_path / ".git"
+    git_directory.mkdir()
+    workstream_module = importlib.import_module("plugins.powercontext.workstream")
+    monkeypatch.setattr(workstream_module, "git_value", lambda _cwd, *_args: str(git_directory))
+
+    client = FakeClient()
+    provider = provider_module.PowerContextMemoryProvider(
+        {"scope_id": "hermes:{profile}:{user_id}"},
+        client_factory=lambda _config: client,
+    )
+    provider.initialize(
+        "session-1",
+        hermes_home=str(tmp_path / "hermes"),
+        cwd=str(tmp_path),
+        agent_identity="coder",
+        user_id="user-7",
+    )
+    default_scope_id = provider._scope_id
+
+    try:
+        bound = json.loads(provider.handle_slash_command("workstream bind shared:scope"))
+        assert bound["scope_id"] == "shared:scope"
+        assert provider._scope_id == "shared:scope"
+
+        cleared = json.loads(provider.handle_slash_command("workstream clear"))
+        assert cleared["status"] == "cleared"
+        assert provider._scope_id == default_scope_id
+
+        status = json.loads(provider.handle_slash_command("workstream status"))
+        assert status["bound_scope_id"] is None
+        assert status["active_scope_id"] == default_scope_id
+
+        provider.handle_slash_command("search uv")
+        assert client.calls[-1][0] == "search_memory"
+        assert client.calls[-1][1][0] == default_scope_id
+    finally:
+        provider.shutdown()
+
+
 def test_workstream_bind_isolates_queued_background_work(tmp_path, hermes_modules, monkeypatch):
     provider_module, _cli_module = hermes_modules
     git_directory = tmp_path / ".git"

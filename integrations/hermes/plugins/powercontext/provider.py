@@ -151,6 +151,7 @@ class PowerContextMemoryProvider(MemoryProvider):
         self._client_factory = client_factory or self._make_client
         self._client: PowerContextClient | Any | None = None
         self._scope_id = ""
+        self._default_scope_id = ""
         self._session_id = ""
         self._memory_write_queue: queue.Queue[Callable[[], None] | None] | None = None
         self._memory_write_thread: threading.Thread | None = None
@@ -334,16 +335,17 @@ class PowerContextMemoryProvider(MemoryProvider):
             True,
         ):
             self._workstream_bound_scope = _read_workstream_scope(self._workstream_cwd) or ""
+        scope_template = str(configured_scope or _DEFAULT_SCOPE_TEMPLATE)
+        self._default_scope_id = _format_scope(
+            scope_template,
+            hermes_home=hermes_home,
+            agent_identity=agent_identity,
+            user_id=user_id,
+        )
         if self._workstream_bound_scope:
             self._scope_id = self._workstream_bound_scope
         else:
-            scope_template = str(configured_scope or _DEFAULT_SCOPE_TEMPLATE)
-            self._scope_id = _format_scope(
-                scope_template,
-                hermes_home=hermes_home,
-                agent_identity=agent_identity,
-                user_id=user_id,
-            )
+            self._scope_id = self._default_scope_id
         self._client = self._client_factory(merged_config)
         trace_path = _config_value(
             merged_config,
