@@ -238,7 +238,7 @@ def test_capture_failure_does_not_prevent_context_injection(
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("capture failed")),
     )
 
-    output, _ = _run_main(
+    output, errors = _run_main(
         hook_module,
         monkeypatch,
         {
@@ -248,7 +248,41 @@ def test_capture_failure_does_not_prevent_context_injection(
         },
     )
 
-    assert json.loads(output)["hookSpecificOutput"]["additionalContext"] == "prepared context"
+    result = json.loads(output)
+    assert result["hookSpecificOutput"]["additionalContext"] == "prepared context"
+    assert json.loads(result["systemMessage"]) == {
+        "component": "powercontext.claude_code.recall",
+        "event": "capture_source",
+        "outcome": "invalid_response",
+    }
+    assert errors == ""
+
+
+def test_host_diagnostic_is_throttled_across_hook_invocations(
+    hook_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        hook_module,
+        "_prepare_context",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(hook_module._ServerUnavailableError()),
+    )
+    monkeypatch.setattr(hook_module, "resolve_scope_id", lambda *_args, **_kwargs: "project:test")
+    monkeypatch.setattr(hook_module, "_capture_prompt", lambda *_args, **_kwargs: {"position": 1})
+
+    payload: dict[str, object] = {
+        "hook_event_name": "UserPromptSubmit",
+        "cwd": "/workspace/project",
+        "prompt": "Recall context",
+    }
+    outputs: list[str] = []
+    for _ in range(2):
+        output, errors = _run_main(hook_module, monkeypatch, payload)
+        assert errors == ""
+        outputs.append(output)
+
+    assert json.loads(outputs[0])["systemMessage"]
+    assert outputs[1] == ""
 
 
 def test_recall_and_capture_share_one_http_deadline(

@@ -172,23 +172,24 @@ block the host task. They also expose a bounded, content-free diagnostic through
 
 | Host | Diagnostic channel | Component |
 | --- | --- | --- |
-| Codex | Hook `stderr` | `powercontext.codex.recall` |
-| Claude Code | Hook `stderr` | `powercontext.claude_code.recall` |
+| Codex | Hook stdout `systemMessage` | `powercontext.codex.recall` |
+| Claude Code | Hook stdout `systemMessage` | `powercontext.claude_code.recall` |
 | DSH | Host logger warning | `powercontext.dsh` |
 | OpenClaw | Plugin logger warning | `powercontext.openclaw` |
 | Pi | Host terminal warning | `powercontext.pi` |
 | Hermes | Python host logger warning | `powercontext.hermes` |
 
-For example, a transport failure is reported as a single-line event such as:
+For example, a transport failure is returned in the hook's top-level `systemMessage`; its value is a single-line,
+content-free JSON event such as:
 
 ```json
-{"component":"powercontext.codex.recall","event":"context_prepare","outcome":"server_unavailable","recovery":"powercontext doctor"}
+{"systemMessage":"{\"component\":\"powercontext.codex.recall\",\"event\":\"context_prepare\",\"outcome\":\"server_unavailable\",\"recovery\":\"powercontext doctor\"}"}
 ```
 
 The stable outcomes remain distinct: `authentication_failed`, `version_mismatch`, `server_unavailable`, and
 `invalid_response`. Diagnostics never include prompts, recalled content, scopes, URLs, credentials, response bodies,
-or exception text. Repeated failures are deduplicated or throttled within the host process; a diagnostic failure never
-changes the host task result.
+or exception text. Repeated outcomes are deduplicated within one invocation and throttled for 60 seconds using local
+state shared across hook processes; a diagnostic failure never changes the host task result.
 
 Bub is not included in this first host-diagnostic slice. Its integration will be qualified separately when its host
 diagnostic channel and native lifecycle behavior are specified.
@@ -201,7 +202,8 @@ database is reopened automatically.
 
 ## Codex does not inject recalled context
 
-Inspect the Hook's single-line JSON event on stderr. `empty` means the Runtime prepared no context for this turn.
+For failures, inspect the Hook's top-level `systemMessage`; its value is the single-line JSON event. `empty` means the
+Runtime prepared no context for this turn and remains a local diagnostic rather than a host warning.
 `version_mismatch` means the installed plugin expects
 `POST /v1/context/prepare` but the Server does not provide it—reinstall the plugin and tool from the same ref, then
 restart the Server. `server_unavailable` and `invalid_response` distinguish transport and contract failures. These
@@ -220,7 +222,8 @@ powercontext doctor
 ```
 
 The first command checks the Claude CLI and enabled plugin without contacting the Server. The second checks Server
-liveness and readiness. Then inspect the Hook's single-line stderr event. Claude Code uses the same Prepared Context
+liveness and readiness. For failures, inspect the Hook's top-level `systemMessage`; its value is the single-line JSON
+event. Claude Code uses the same Prepared Context
 contract as Codex, with component `powercontext.claude_code.recall`:
 
 | Outcome | Action |

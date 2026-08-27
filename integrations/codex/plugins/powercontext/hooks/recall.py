@@ -36,6 +36,7 @@ _PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_PLUGIN_ROOT))
 
 from hooks import prepared_context as _prepared_context  # noqa: E402
+from hooks.diagnostics import should_emit as _should_emit_diagnostic  # noqa: E402
 from scripts.project_scope import resolve_scope_id  # noqa: E402
 from settings import CodexPluginSettings  # noqa: E402
 
@@ -107,10 +108,12 @@ def main(settings: CodexPluginSettings | None = None) -> int:
         if not _is_user_prompt_submit(payload.get("hook_event_name")):
             return 0
         emitted_diagnostics: set[str] = set()
+        diagnostic_events: list[dict[str, object]] = []
         prompt = payload.get("prompt")
         cwd = payload.get("cwd")
         if not isinstance(prompt, str) or not prompt.strip() or not isinstance(cwd, str):
-            _emit_context_event("skipped")
+            _emit_context_event("skipped", diagnostic_events=diagnostic_events)
+            _write_hook_output(diagnostic_events=diagnostic_events)
             return 0
         scope_id = resolve_scope_id(cwd, configured_scope_id=settings.scope_id)
         context = _recall_context(
@@ -119,6 +122,7 @@ def main(settings: CodexPluginSettings | None = None) -> int:
             settings=settings,
             deadline=http_deadline,
             emitted_diagnostics=emitted_diagnostics,
+            diagnostic_events=diagnostic_events,
         )
         if settings.capture_prompts and len(prompt) <= _MAX_SOURCE_LENGTH:
             try:
@@ -138,7 +142,12 @@ def main(settings: CodexPluginSettings | None = None) -> int:
                         deadline=http_deadline,
                     )
             except Exception as error:
-                _emit_failure_event("capture_source", error, emitted_diagnostics=emitted_diagnostics)
+                _emit_failure_event(
+                    "capture_source",
+                    error,
+                    emitted_diagnostics=emitted_diagnostics,
+                    diagnostic_events=diagnostic_events,
+                )
         if context:
             with suppress(Exception):
                 _record_evaluation_trace(
@@ -147,17 +156,7 @@ def main(settings: CodexPluginSettings | None = None) -> int:
                     injected_text=context,
                     scope_id=scope_id,
                 )
-            json.dump(
-                {
-                    "hookSpecificOutput": {
-                        "hookEventName": "UserPromptSubmit",
-                        "additionalContext": context,
-                    }
-                },
-                sys.stdout,
-                separators=(",", ":"),
-            )
-            sys.stdout.write("\n")
+        _write_hook_output(context=context, diagnostic_events=diagnostic_events)
     except Exception:
         return 0
     return 0
@@ -271,15 +270,17 @@ def _post_json(
         headers=_request_headers(settings),
         method="POST",
     )
-    request_timeout = min(settings.request_timeout_seconds, _remaining_time(deadline))
-    request_deadline = min(deadline, monotonic() + request_timeout)
     try:
+        request_timeout = min(settings.request_timeout_seconds, _remaining_time(deadline))
+        request_deadline = min(deadline, monotonic() + request_timeout)
         with _URL_OPENER.open(request, timeout=request_timeout) as response:
             if expected_status is not None and response.status != expected_status:
                 raise _HttpStatusError(response.status)
             result = json.loads(_read_response(response, deadline=request_deadline))
     except HTTPError as error:
         raise _HttpStatusError(error.code) from error
+    except TimeoutError as error:
+        raise _ServerUnavailableError from error
     except OSError as error:
         raise _ServerUnavailableError from error
     except ValueError as error:
@@ -335,6 +336,7 @@ def _recall_context(
     settings: CodexPluginSettings,
     deadline: float,
     emitted_diagnostics: set[str] | None = None,
+    diagnostic_events: list[dict[str, object]] | None = None,
 ) -> str | None:
     try:
         prepared = _validate_prepared_context(_prepare_context(query, scope_id, settings=settings, deadline=deadline))
@@ -352,23 +354,35 @@ def _recall_context(
             http_status=error.status,
             recovery="powercontext doctor" if outcome == "server_unavailable" else None,
             emitted_diagnostics=emitted_diagnostics,
+            diagnostic_events=diagnostic_events,
         )
         return None
-    except _ServerUnavailableError:
+    except (_ServerUnavailableError, TimeoutError):
         _emit_context_event(
             "server_unavailable",
             recovery="powercontext doctor",
             emitted_diagnostics=emitted_diagnostics,
+            diagnostic_events=diagnostic_events,
         )
         return None
     except _InvalidResponseError:
-        _emit_context_event("invalid_response", emitted_diagnostics=emitted_diagnostics)
+        _emit_context_event(
+            "invalid_response",
+            emitted_diagnostics=emitted_diagnostics,
+            diagnostic_events=diagnostic_events,
+        )
         return None
 
     status = cast(str, prepared["status"])
     content_bytes = cast(int, prepared["content_bytes"])
     if status == "empty":
-        _emit_context_event("empty", http_status=200, context_status=status, content_bytes=content_bytes)
+        _emit_context_event(
+            "empty",
+            http_status=200,
+            context_status=status,
+            content_bytes=content_bytes,
+            diagnostic_events=diagnostic_events,
+        )
         return None
     return cast(str, prepared["content"])
 
@@ -432,12 +446,15 @@ def _emit_context_event(
     content_bytes: int | None = None,
     recovery: str | None = None,
     emitted_diagnostics: set[str] | None = None,
+    diagnostic_events: list[dict[str, object]] | None = None,
 ) -> None:
     if emitted_diagnostics is not None and outcome in _FAILURE_OUTCOMES:
         key = outcome
         if key in emitted_diagnostics:
             return
         emitted_diagnostics.add(key)
+        if not _should_emit_diagnostic(outcome):
+            return
     event: dict[str, object] = {
         "component": "powercontext.codex.recall",
         "event": event_name,
@@ -451,7 +468,10 @@ def _emit_context_event(
         event["content_bytes"] = content_bytes
     if recovery is not None:
         event["recovery"] = recovery
-    sys.stderr.write(json.dumps(event, separators=(",", ":")) + "\n")
+    if diagnostic_events is None or outcome not in _FAILURE_OUTCOMES:
+        sys.stderr.write(json.dumps(event, separators=(",", ":")) + "\n")
+    else:
+        diagnostic_events.append(event)
 
 
 def _emit_failure_event(
@@ -459,6 +479,7 @@ def _emit_failure_event(
     error: BaseException,
     *,
     emitted_diagnostics: set[str],
+    diagnostic_events: list[dict[str, object]] | None = None,
 ) -> None:
     if isinstance(error, _HttpStatusError):
         if error.status == 401:
@@ -475,20 +496,41 @@ def _emit_failure_event(
             http_status=error.status,
             recovery="powercontext doctor" if outcome == "server_unavailable" else None,
             emitted_diagnostics=emitted_diagnostics,
+            diagnostic_events=diagnostic_events,
         )
-    elif isinstance(error, _ServerUnavailableError):
+    elif isinstance(error, (_ServerUnavailableError, TimeoutError)):
         _emit_context_event(
             "server_unavailable",
             event_name=event_name,
             recovery="powercontext doctor",
             emitted_diagnostics=emitted_diagnostics,
+            diagnostic_events=diagnostic_events,
         )
     else:
         _emit_context_event(
             "invalid_response",
             event_name=event_name,
             emitted_diagnostics=emitted_diagnostics,
+            diagnostic_events=diagnostic_events,
         )
+
+
+def _write_hook_output(
+    *,
+    context: str | None = None,
+    diagnostic_events: list[dict[str, object]],
+) -> None:
+    output: dict[str, object] = {}
+    if diagnostic_events:
+        output["systemMessage"] = "\n".join(json.dumps(event, separators=(",", ":")) for event in diagnostic_events)
+    if context:
+        output["hookSpecificOutput"] = {
+            "hookEventName": "UserPromptSubmit",
+            "additionalContext": context,
+        }
+    if output:
+        json.dump(output, sys.stdout, separators=(",", ":"))
+        sys.stdout.write("\n")
 
 
 if __name__ == "__main__":

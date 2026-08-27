@@ -1037,6 +1037,32 @@ def test_tool_failure_fails_open_and_emits_diagnostic(provider_and_client, caplo
     ]
 
 
+def test_invalid_response_failure_emits_an_invalid_response_diagnostic(provider_and_client, caplog):
+    provider, client = provider_and_client
+
+    def failed_search(*args, **kwargs):
+        from plugins.powercontext.client import PowerContextInvalidResponseError  # ty: ignore[unresolved-import]
+
+        raise PowerContextInvalidResponseError("invalid JSON")  # noqa: TRY003
+
+    client.search_memory = failed_search
+
+    with caplog.at_level(logging.WARNING, logger="plugins.powercontext.provider"):
+        result = json.loads(provider.handle_tool_call("powercontext_search_memory", {"query": "deployment"}))
+
+    assert result == {"error": "PowerContext operation failed: invalid JSON"}
+    diagnostics = [
+        json.loads(record.message) for record in caplog.records if record.name == "plugins.powercontext.provider"
+    ]
+    assert diagnostics == [
+        {
+            "component": "powercontext.hermes",
+            "event": "tool_call",
+            "outcome": "invalid_response",
+        }
+    ]
+
+
 def test_cli_registers_provider_commands(hermes_modules):
     _provider_module, cli_module = hermes_modules
     parser = argparse.ArgumentParser()
@@ -1075,3 +1101,22 @@ def test_http_client_dispatches_operation_paths_and_get_query(hermes_modules):
     assert result == {"ok": True}
     assert requests[0].full_url == "http://powercontext.test:8000/v1/stats?scope_id=hermes%3Atest&period=7d"
     assert requests[0].method == "GET"
+
+
+def test_http_client_classifies_malformed_success_response_separately(hermes_modules):
+    provider_module, _cli_module = hermes_modules
+    from plugins.powercontext.client import PowerContextInvalidResponseError  # ty: ignore[unresolved-import]
+
+    class Response:
+        status = 200
+
+        def read(self, _limit):
+            return b"not-json"
+
+    client = provider_module.PowerContextClient(
+        "http://powercontext.test:8000",
+        transport=lambda _request, _timeout: Response(),
+    )
+
+    with pytest.raises(PowerContextInvalidResponseError, match="invalid JSON"):
+        client.get_liveness()

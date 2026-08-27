@@ -165,22 +165,22 @@ Codex、Claude Code、DSH、OpenClaw、Pi 和 Hermes 集成都遵循 fail-open�
 
 | 宿主 | 诊断通道 | component |
 | --- | --- | --- |
-| Codex | Hook `stderr` | `powercontext.codex.recall` |
-| Claude Code | Hook `stderr` | `powercontext.claude_code.recall` |
+| Codex | Hook stdout `systemMessage` | `powercontext.codex.recall` |
+| Claude Code | Hook stdout `systemMessage` | `powercontext.claude_code.recall` |
 | DSH | 宿主 logger warning | `powercontext.dsh` |
 | OpenClaw | 插件 logger warning | `powercontext.openclaw` |
 | Pi | 宿主终端 warning | `powercontext.pi` |
 | Hermes | Python 宿主 logger warning | `powercontext.hermes` |
 
-例如，传输失败会输出类似下面的单行事件：
+例如，传输失败会通过 Hook 顶层的 `systemMessage` 返回；它的值是类似下面的单行、无内容 JSON 事件：
 
 ```json
-{"component":"powercontext.codex.recall","event":"context_prepare","outcome":"server_unavailable","recovery":"powercontext doctor"}
+{"systemMessage":"{\"component\":\"powercontext.codex.recall\",\"event\":\"context_prepare\",\"outcome\":\"server_unavailable\",\"recovery\":\"powercontext doctor\"}"}
 ```
 
 稳定的 outcome 仍然彼此区分：`authentication_failed`、`version_mismatch`、`server_unavailable` 和
-`invalid_response`。诊断不会包含 prompt、召回内容、scope、URL、凭据、响应正文或异常文本。同一宿主进程内
-重复失败会去重或限流；诊断失败不会改变宿主任务结果。
+`invalid_response`。诊断不会包含 prompt、召回内容、scope、URL、凭据、响应正文或异常文本。同一次调用内的
+相同 outcome 会去重，跨 Hook 进程会使用本地状态限流 60 秒；诊断失败不会改变宿主任务结果。
 
 Bub 不包含在本次第一阶段的宿主诊断切片中。待其宿主诊断通道和原生生命周期行为单独明确并完成支持验证后再纳入。
 
@@ -191,7 +191,8 @@ Bub 不包含在本次第一阶段的宿主诊断切片中。待其宿主诊断�
 
 ## Codex 没有注入召回上下文
 
-查看 Hook 在 stderr 输出的单行 JSON 事件。`empty` 表示 Runtime 没有为本轮准备上下文。`version_mismatch`
+对于故障，查看 Hook 顶层 `systemMessage` 中的单行 JSON 事件。`empty` 表示 Runtime 没有为本轮准备上下文，
+它仍是本地诊断，不作为宿主 warning。`version_mismatch`
 表示已安装插件要求 `POST /v1/context/prepare`，但 Server 尚未提供该接口；请从同一个 ref 重新安装插件和工具
 并重启 Server。`server_unavailable` 和 `invalid_response` 分别表示传输与 contract 问题。诊断事件会刻意
 省略 query 与准备好的上下文正文。
@@ -209,7 +210,7 @@ powercontext doctor
 ```
 
 第一个命令只检查 Claude CLI 和已启用插件，不连接 Server；第二个命令检查 Server liveness 和 readiness。
-然后查看 Hook 在 stderr 输出的单行事件。Claude Code 使用与 Codex 相同的 Prepared Context contract，
+然后查看 Hook 顶层 `systemMessage` 中的单行事件。Claude Code 使用与 Codex 相同的 Prepared Context contract，
 component 为 `powercontext.claude_code.recall`：
 
 | Outcome | 处理方式 |

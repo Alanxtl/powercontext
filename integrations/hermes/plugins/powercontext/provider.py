@@ -33,6 +33,7 @@ from .client import (
     PowerContextClient,
     PowerContextError,
     PowerContextHTTPError,
+    PowerContextInvalidResponseError,
     PowerContextTransportError,
 )
 from .helpers import (
@@ -170,6 +171,9 @@ class PowerContextMemoryProvider(MemoryProvider):
         elif isinstance(error, PowerContextTransportError):
             status = None
             outcome = "server_unavailable"
+        elif isinstance(error, PowerContextInvalidResponseError):
+            status = None
+            outcome = "invalid_response"
         else:
             status = None
             outcome = "invalid_response"

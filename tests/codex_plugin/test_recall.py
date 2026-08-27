@@ -156,6 +156,7 @@ def test_recall_failure_is_non_blocking(
         "resolve_scope_id",
         lambda _cwd, *, configured_scope_id: "project:test",
     )
+    monkeypatch.setattr(recall_module, "_capture_prompt", lambda *_args, **_kwargs: {"position": 1})
     monkeypatch.setattr(
         sys,
         "stdin",
@@ -173,14 +174,87 @@ def test_recall_failure_is_non_blocking(
     monkeypatch.setattr(sys, "stderr", errors)
 
     assert recall_module.main() == 0
-    assert output.getvalue() == ""
-    diagnostic = json.loads(errors.getvalue())
+    assert errors.getvalue() == ""
+    result = json.loads(output.getvalue())
+    diagnostic = json.loads(result["systemMessage"])
     assert diagnostic == {
         "component": "powercontext.codex.recall",
         "event": "context_prepare",
         "outcome": "server_unavailable",
         "recovery": "powercontext doctor",
     }
+
+
+def test_host_output_keeps_context_when_capture_diagnostic_is_emitted(
+    recall_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(recall_module, "_prepare_context", lambda *_args, **_kwargs: _prepared("prepared context"))
+    monkeypatch.setattr(recall_module, "resolve_scope_id", lambda *_args, **_kwargs: "project:test")
+    monkeypatch.setattr(
+        recall_module,
+        "_capture_prompt",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(recall_module._HttpStatusError(503)),
+    )
+
+    output = io.StringIO()
+    errors = io.StringIO()
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        io.StringIO(
+            json.dumps({
+                "hook_event_name": "UserPromptSubmit",
+                "cwd": "/workspace/project",
+                "prompt": "Recall despite capture failure",
+            })
+        ),
+    )
+    monkeypatch.setattr(sys, "stdout", output)
+    monkeypatch.setattr(sys, "stderr", errors)
+
+    assert recall_module.main() == 0
+
+    result = json.loads(output.getvalue())
+    assert result["hookSpecificOutput"]["additionalContext"] == "prepared context"
+    assert json.loads(result["systemMessage"]) == {
+        "component": "powercontext.codex.recall",
+        "event": "capture_source",
+        "outcome": "server_unavailable",
+        "http_status": 503,
+        "recovery": "powercontext doctor",
+    }
+    assert errors.getvalue() == ""
+
+
+def test_host_diagnostic_is_throttled_across_hook_invocations(
+    recall_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        recall_module,
+        "_prepare_context",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(recall_module._ServerUnavailableError()),
+    )
+    monkeypatch.setattr(recall_module, "resolve_scope_id", lambda *_args, **_kwargs: "project:test")
+    monkeypatch.setattr(recall_module, "_capture_prompt", lambda *_args, **_kwargs: {"position": 1})
+
+    payload = {
+        "hook_event_name": "UserPromptSubmit",
+        "cwd": "/workspace/project",
+        "prompt": "Recall context",
+    }
+    outputs: list[str] = []
+    for _ in range(2):
+        output = io.StringIO()
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(payload)))
+        monkeypatch.setattr(sys, "stdout", output)
+        monkeypatch.setattr(sys, "stderr", io.StringIO())
+        assert recall_module.main() == 0
+        outputs.append(output.getvalue())
+
+    assert json.loads(outputs[0])["systemMessage"]
+    assert outputs[1] == ""
 
 
 def test_recall_authentication_failure_is_non_blocking_and_content_free(
@@ -691,6 +765,21 @@ def test_hook_aborts_a_slow_response_at_the_request_deadline(
             )
 
     assert time.monotonic() - started < 0.6
+
+
+def test_expired_request_deadline_is_reported_as_server_unavailable(
+    recall_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(recall_module, "_remaining_time", lambda _deadline: (_ for _ in ()).throw(TimeoutError))
+
+    with pytest.raises(recall_module._ServerUnavailableError):
+        recall_module._post_json(
+            "/v1/context/prepare",
+            {},
+            settings=recall_module.CodexPluginSettings(),
+            deadline=time.monotonic() + 1,
+        )
 
 
 def test_prompt_capture_can_be_disabled(

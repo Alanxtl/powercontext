@@ -92,7 +92,11 @@ class PowerContextHTTPError(PowerContextError):
 
 
 class PowerContextTransportError(PowerContextError):
-    """A transport, timeout, or response decoding failure."""
+    """A transport or timeout failure before a valid response was received."""
+
+
+class PowerContextInvalidResponseError(PowerContextError):
+    """A successful HTTP response that violates the PowerContext response contract."""
 
 
 class _NoRedirectHandler(HTTPRedirectHandler):
@@ -161,15 +165,15 @@ class PowerContextClient:
             raise PowerContextTransportError("PowerContext request failed") from error  # noqa: TRY003
 
         if len(raw) > MAX_RESPONSE_BYTES:
-            raise PowerContextTransportError("PowerContext response exceeded the size limit")  # noqa: TRY003
+            raise PowerContextInvalidResponseError("PowerContext response exceeded the size limit")  # noqa: TRY003
         if status < 200 or status >= 300:
             raise PowerContextHTTPError(status)
         try:
             decoded = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as error:
-            raise PowerContextTransportError("PowerContext returned invalid JSON") from error  # noqa: TRY003
+            raise PowerContextInvalidResponseError("PowerContext returned invalid JSON") from error  # noqa: TRY003
         if not isinstance(decoded, dict):
-            raise PowerContextTransportError("PowerContext returned a non-object response")  # noqa: TRY003
+            raise PowerContextInvalidResponseError("PowerContext returned a non-object response")  # noqa: TRY003
         return decoded
 
     def request_operation(self, operation: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
