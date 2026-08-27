@@ -12,7 +12,7 @@ The companion is installed alongside
 [`plugins/powercontext`](../powercontext/README.md) by:
 
 ```bash
-powercontext setup hermes --source oceanbase/powercontext --ref latest
+powercontext setup hermes --source oceanbase/powercontext --ref master
 ```
 
 It requires Hermes Agent v0.20.4 or newer. The companion does not provide

@@ -13,7 +13,7 @@ provider configuration is read from `$HERMES_HOME/powercontext/config.json`.
 To install or refresh the provider from a matching PowerContext release tag:
 
 ```bash
-powercontext setup hermes --source oceanbase/powercontext --ref latest
+powercontext setup hermes --source oceanbase/powercontext --ref master
 powercontext doctor hermes
 ```
 

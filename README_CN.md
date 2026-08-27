@@ -23,7 +23,7 @@ uv tool install "powercontext[cli,server]==0.0.2"
 powercontext setup codex --source oceanbase/powercontext --ref v0.0.2
 powercontext setup claude-code --source oceanbase/powercontext --ref v0.0.2
 powercontext setup dsh --source oceanbase/powercontext --ref v0.0.2
-powercontext setup hermes --source oceanbase/powercontext --ref v0.0.2
+powercontext setup hermes --source oceanbase/powercontext --ref master
 ```
 
 第一条命令会在隔离环境中安装 CLI 和本地 Server。后续 setup 命令会从匹配的仓库 tag 安装对应的

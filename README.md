@@ -25,7 +25,7 @@ uv tool install "powercontext[cli,server]==0.0.2"
 powercontext setup codex --source oceanbase/powercontext --ref v0.0.2
 powercontext setup claude-code --source oceanbase/powercontext --ref v0.0.2
 powercontext setup dsh --source oceanbase/powercontext --ref v0.0.2
-powercontext setup hermes --source oceanbase/powercontext --ref v0.0.2
+powercontext setup hermes --source oceanbase/powercontext --ref master
 ```
 
 The first command installs the CLI and local Server in an isolated environment. The subsequent setup commands
