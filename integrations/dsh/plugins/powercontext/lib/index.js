@@ -1883,13 +1883,14 @@ const Config = { "~standard": {
 } };
 function createRuntime(ctx, config) {
 	const resolved = resolveConfig(config);
+	const client = new PowerContextClient({
+		baseUrl: resolved.baseUrl,
+		authorization: resolved.authorization,
+		requestTimeoutMs: resolved.requestTimeoutMs
+	});
 	const emitDiagnostic = createDiagnosticEmitter((line) => ctx.logger.warn(line));
 	return {
-		client: new PowerContextClient({
-			baseUrl: resolved.baseUrl,
-			authorization: resolved.authorization,
-			requestTimeoutMs: resolved.requestTimeoutMs
-		}),
+		client,
 		config: resolved,
 		resolveScope: (cwd) => deriveScopeId(cwd, { configuredScopeId: resolved.scopeId }),
 		log: (event) => {
@@ -1898,7 +1899,10 @@ function createRuntime(ctx, config) {
 				...event
 			});
 			if (event.outcome === "ready" || event.outcome === "ok" || event.outcome === "empty") ctx.logger.debug?.(line);
-			else emitDiagnostic({ component: "powercontext.dsh", ...event });
+			else emitDiagnostic({
+				component: "powercontext.dsh",
+				...event
+			});
 		}
 	};
 }
