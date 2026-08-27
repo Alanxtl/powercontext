@@ -25,6 +25,11 @@ const originalEnv = {
   POWERCONTEXT_ROOT: process.env.POWERCONTEXT_ROOT,
 }
 
+function clearOverrides() {
+  delete process.env.POWERCONTEXT_OPENAPI
+  delete process.env.POWERCONTEXT_ROOT
+}
+
 afterEach(() => {
   if (originalEnv.POWERCONTEXT_OPENAPI === undefined) delete process.env.POWERCONTEXT_OPENAPI
   else process.env.POWERCONTEXT_OPENAPI = originalEnv.POWERCONTEXT_OPENAPI
@@ -50,5 +55,31 @@ describe('resolveOpenApiPath', () => {
     process.env.POWERCONTEXT_ROOT = root
     expect(resolveOpenApiPath()).toBe(yamlPath)
     expect(resolvePowerContextRoot()).toBe(root)
+  })
+
+  it('prefers the repository contract over the plugin fallback', () => {
+    const checkout = mkdtempSync(join(tmpdir(), 'pc-checkout-'))
+    const pluginRoot = join(checkout, 'integrations', 'dsh', 'plugins', 'powercontext')
+    const repositoryYaml = join(checkout, 'openapi', 'powercontext.yaml')
+    const fallbackYaml = join(pluginRoot, 'openapi', 'powercontext.yaml')
+    mkdirSync(join(checkout, 'openapi'), { recursive: true })
+    mkdirSync(join(pluginRoot, 'openapi'), { recursive: true })
+    writeFileSync(repositoryYaml, 'openapi: 3.1.0\ninfo:\n  title: repository\n')
+    writeFileSync(fallbackYaml, 'openapi: 3.1.0\ninfo:\n  title: fallback\n')
+    clearOverrides()
+
+    expect(resolvePowerContextRoot(pluginRoot)).toBe(checkout)
+    expect(resolveOpenApiPath(pluginRoot)).toBe(repositoryYaml)
+  })
+
+  it('uses the plugin contract as a standalone fallback', () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), 'pc-standalone-'))
+    const fallbackYaml = join(pluginRoot, 'openapi', 'powercontext.yaml')
+    mkdirSync(join(pluginRoot, 'openapi'))
+    writeFileSync(fallbackYaml, 'openapi: 3.1.0\n')
+    clearOverrides()
+
+    expect(resolvePowerContextRoot(pluginRoot)).toBeUndefined()
+    expect(resolveOpenApiPath(pluginRoot)).toBe(fallbackYaml)
   })
 })
