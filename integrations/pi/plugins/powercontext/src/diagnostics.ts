@@ -24,13 +24,27 @@ export interface DiagnosticEvent {
   [key: string]: unknown
 }
 
-export function failureEvent(event: string, error: unknown): DiagnosticEvent {
+const COMPATIBILITY_OR_AVAILABILITY_PATHS = new Set([
+  '/health/live',
+  '/health/ready',
+  '/v1/capabilities',
+  '/v1/context/prepare',
+])
+
+function isDomainStatus(status: number): boolean {
+  return status === 404 || status === 409 || status === 422
+}
+
+export function failureEvent(event: string, error: unknown): DiagnosticEvent | undefined {
   if (error instanceof ServerResponseError) {
     if (error.statusCode === 401) return { event, outcome: 'authentication_failed', http_status: 401 }
-    if (error.statusCode === 404) return { event, outcome: 'version_mismatch', http_status: 404 }
+    if (error.statusCode === 404 && COMPATIBILITY_OR_AVAILABILITY_PATHS.has(error.path)) {
+      return { event, outcome: 'version_mismatch', http_status: 404 }
+    }
     if (error.statusCode === 503) {
       return { event, outcome: 'server_unavailable', http_status: 503, recovery: 'powercontext doctor' }
     }
+    if (isDomainStatus(error.statusCode)) return undefined
     return { event, outcome: 'invalid_response', http_status: error.statusCode }
   }
   if (error instanceof TransportError) {

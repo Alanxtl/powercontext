@@ -86,6 +86,7 @@ export async function captureUserPrompt(input: CaptureInput): Promise<void> {
     }
     input.log({ event: 'capture_content_source', outcome: 'ok', status: result.status })
   } catch (error) {
-    input.log(failureEvent('capture_content_source', error))
+    const diagnostic = failureEvent('capture_content_source', error)
+    if (diagnostic) input.log(diagnostic)
   }
 }

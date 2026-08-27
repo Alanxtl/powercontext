@@ -1063,6 +1063,56 @@ def test_invalid_response_failure_emits_an_invalid_response_diagnostic(provider_
     ]
 
 
+@pytest.mark.parametrize(
+    ("status", "code"),
+    [(404, "not_found"), (409, "conflict"), (422, "invalid_request")],
+)
+def test_direct_tool_domain_errors_are_preserved_without_availability_diagnostics(
+    provider_and_client,
+    caplog,
+    status,
+    code,
+):
+    provider, client = provider_and_client
+
+    def failed_search(*args, **kwargs):
+        from plugins.powercontext.client import PowerContextHTTPError  # ty: ignore[unresolved-import]
+
+        raise PowerContextHTTPError(status, path="/v1/memory/search")
+
+    client.search_memory = failed_search
+
+    with caplog.at_level(logging.WARNING, logger="plugins.powercontext.provider"):
+        result = json.loads(provider.handle_tool_call("powercontext_search_memory", {"query": "deployment"}))
+
+    assert result["code"] == code
+    assert result["status"] == status
+    assert [record for record in caplog.records if record.name == "plugins.powercontext.provider"] == []
+
+
+def test_missing_prepare_endpoint_remains_a_version_mismatch_diagnostic(provider_and_client, caplog):
+    provider, _client = provider_and_client
+    from plugins.powercontext.client import PowerContextHTTPError  # ty: ignore[unresolved-import]
+
+    with caplog.at_level(logging.WARNING, logger="plugins.powercontext.provider"):
+        provider._emit_failure_diagnostic(
+            "context_prepare",
+            PowerContextHTTPError(404, path="/v1/context/prepare"),
+        )
+
+    diagnostics = [
+        json.loads(record.message) for record in caplog.records if record.name == "plugins.powercontext.provider"
+    ]
+    assert diagnostics == [
+        {
+            "component": "powercontext.hermes",
+            "event": "context_prepare",
+            "outcome": "version_mismatch",
+            "http_status": 404,
+        }
+    ]
+
+
 def test_cli_registers_provider_commands(hermes_modules):
     _provider_module, cli_module = hermes_modules
     parser = argparse.ArgumentParser()
@@ -1120,3 +1170,27 @@ def test_http_client_classifies_malformed_success_response_separately(hermes_mod
 
     with pytest.raises(PowerContextInvalidResponseError, match="invalid JSON"):
         client.get_liveness()
+
+
+def test_http_client_preserves_domain_error_details(hermes_modules):
+    provider_module, _cli_module = hermes_modules
+    client_module = importlib.import_module("plugins.powercontext.client")
+
+    class Response:
+        status = 404
+
+        def read(self, _limit):
+            return b'{"error":{"code":"memory_not_found","message":"entry missing"}}'
+
+    client = provider_module.PowerContextClient(
+        "http://powercontext.test:8000",
+        transport=lambda _request, _timeout: Response(),
+    )
+
+    with pytest.raises(client_module.PowerContextHTTPError) as caught:
+        client.get_memory_entry("project:test", {"entry_id": "missing"})
+
+    assert caught.value.status == 404
+    assert caught.value.path == "/v1/memory/entries/get"
+    assert caught.value.code == "memory_not_found"
+    assert caught.value.server_message == "entry missing"

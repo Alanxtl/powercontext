@@ -40,9 +40,13 @@ const MAX_SESSION_SCOPES = 32;
 export function registerPowerContextLifecycle(api: OpenClawPluginApi, deps: LifecycleDependencies) {
   const emitDiagnostic = createDiagnosticEmitter((line) => api.logger.warn(line));
   const reportFailure = (event: string, error: unknown, extra: Record<string, unknown> = {}) => {
+    const failure = failureEvent(event, error);
+    if (!failure) {
+      return;
+    }
     emitDiagnostic({
       component: "powercontext.openclaw",
-      ...failureEvent(event, error),
+      ...failure,
       ...extra,
     });
   };

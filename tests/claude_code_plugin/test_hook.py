@@ -473,6 +473,36 @@ def test_http_failures_are_non_blocking_and_content_free(
     assert "secret" not in errors.getvalue()
 
 
+@pytest.mark.parametrize("status", [404, 409, 422])
+def test_capture_domain_errors_do_not_emit_availability_diagnostics(
+    hook_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    status: int,
+) -> None:
+    monkeypatch.setattr(hook_module, "_prepare_context", lambda *_args, **_kwargs: _prepared("prepared context"))
+    monkeypatch.setattr(hook_module, "resolve_scope_id", lambda *_args, **_kwargs: "project:test")
+    monkeypatch.setattr(
+        hook_module,
+        "_capture_prompt",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(hook_module._HttpStatusError(status, "/v1/memory/entries/get")),
+    )
+
+    output, errors = _run_main(
+        hook_module,
+        monkeypatch,
+        {
+            "hook_event_name": "UserPromptSubmit",
+            "cwd": "/workspace/project",
+            "prompt": "Recall despite a domain error",
+        },
+    )
+
+    result = json.loads(output)
+    assert result["hookSpecificOutput"]["additionalContext"] == "prepared context"
+    assert "systemMessage" not in result
+    assert errors == ""
+
+
 def test_unknown_schema_and_oversized_content_are_not_injected(
     hook_module: ModuleType,
     monkeypatch: pytest.MonkeyPatch,

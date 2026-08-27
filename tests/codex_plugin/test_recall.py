@@ -579,6 +579,45 @@ def test_context_prepare_404_is_reported_as_a_version_mismatch(
     assert json.loads(errors.getvalue())["outcome"] == "version_mismatch"
 
 
+@pytest.mark.parametrize("status", [404, 409, 422])
+def test_capture_domain_errors_do_not_emit_availability_diagnostics(
+    recall_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    status: int,
+) -> None:
+    monkeypatch.setattr(recall_module, "_prepare_context", lambda *_args, **_kwargs: _prepared("prepared context"))
+    monkeypatch.setattr(recall_module, "resolve_scope_id", lambda *_args, **_kwargs: "project:test")
+    monkeypatch.setattr(
+        recall_module,
+        "_capture_prompt",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            recall_module._HttpStatusError(status, "/v1/memory/entries/get")
+        ),
+    )
+
+    output = io.StringIO()
+    errors = io.StringIO()
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        io.StringIO(
+            json.dumps({
+                "hook_event_name": "UserPromptSubmit",
+                "cwd": "/workspace/project",
+                "prompt": "Recall despite a domain error",
+            })
+        ),
+    )
+    monkeypatch.setattr(sys, "stdout", output)
+    monkeypatch.setattr(sys, "stderr", errors)
+
+    assert recall_module.main() == 0
+    result = json.loads(output.getvalue())
+    assert result["hookSpecificOutput"]["additionalContext"] == "prepared context"
+    assert "systemMessage" not in result
+    assert errors.getvalue() == ""
+
+
 def test_capture_prompt_is_idempotent_and_preserves_provenance(
     recall_module: ModuleType,
     monkeypatch: pytest.MonkeyPatch,

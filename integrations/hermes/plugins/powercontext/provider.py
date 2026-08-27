@@ -33,7 +33,6 @@ from .client import (
     PowerContextClient,
     PowerContextError,
     PowerContextHTTPError,
-    PowerContextInvalidResponseError,
     PowerContextTransportError,
 )
 from .helpers import (
@@ -111,6 +110,29 @@ logger = logging.getLogger(__name__)
 _MAX_MEMORY_WRITE_QUEUE = 128
 _MEMORY_WRITE_DRAIN_TIMEOUT = 5.0
 _DIAGNOSTIC_COOLDOWN_SECONDS = 60.0
+_COMPATIBILITY_OR_AVAILABILITY_PATHS = frozenset({
+    "/health/live",
+    "/health/ready",
+    "/v1/capabilities",
+    "/v1/context/prepare",
+})
+
+
+def _diagnostic_classification(error: PowerContextError) -> tuple[str, int | None] | None:
+    if isinstance(error, PowerContextHTTPError):
+        status = error.status
+        if status == 401:
+            return "authentication_failed", status
+        if status == 404 and error.path in _COMPATIBILITY_OR_AVAILABILITY_PATHS:
+            return "version_mismatch", status
+        if status == 503:
+            return "server_unavailable", status
+        if status in {404, 409, 422}:
+            return None
+        return "invalid_response", status
+    if isinstance(error, PowerContextTransportError):
+        return "server_unavailable", None
+    return "invalid_response", None
 
 
 class PowerContextMemoryProvider(MemoryProvider):
@@ -158,25 +180,10 @@ class PowerContextMemoryProvider(MemoryProvider):
         self._diagnostic_last_emitted: dict[str, float] = {}
 
     def _emit_failure_diagnostic(self, event: str, error: PowerContextError) -> None:
-        if isinstance(error, PowerContextHTTPError):
-            status = error.status
-            if status == 401:
-                outcome = "authentication_failed"
-            elif status == 404:
-                outcome = "version_mismatch"
-            elif status == 503:
-                outcome = "server_unavailable"
-            else:
-                outcome = "invalid_response"
-        elif isinstance(error, PowerContextTransportError):
-            status = None
-            outcome = "server_unavailable"
-        elif isinstance(error, PowerContextInvalidResponseError):
-            status = None
-            outcome = "invalid_response"
-        else:
-            status = None
-            outcome = "invalid_response"
+        classification = _diagnostic_classification(error)
+        if classification is None:
+            return
+        outcome, status = classification
 
         key = outcome
         now = time.monotonic()

@@ -33,7 +33,8 @@ function createRuntime(): PluginRuntime {
   })
   const emitDiagnostic = createDiagnosticEmitter((line) => console.warn(line))
   const diagnostic = (event: string, error: unknown) => {
-    emitDiagnostic({ component: 'powercontext.pi', ...failureEvent(event, error) })
+    const failure = failureEvent(event, error)
+    if (failure) emitDiagnostic({ component: 'powercontext.pi', ...failure })
   }
   const flusher = createPendingSourceFlusher(client, config, diagnostic)
   const scopes = new Map<string, Promise<string>>()

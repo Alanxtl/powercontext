@@ -85,13 +85,34 @@ _URL_OPENER = build_opener(_RejectRedirects)
 
 
 class _HttpStatusError(RuntimeError):
-    def __init__(self, status: int) -> None:
+    def __init__(self, status: int, path: str = "/v1/context/prepare") -> None:
         self.status = status
+        self.path = path
         super().__init__(f"PowerContext returned HTTP {status}")
 
 
 class _ServerUnavailableError(RuntimeError):
     pass
+
+
+_COMPATIBILITY_OR_AVAILABILITY_PATHS = frozenset({
+    "/health/live",
+    "/health/ready",
+    "/v1/capabilities",
+    "/v1/context/prepare",
+})
+
+
+def _http_failure_outcome(error: _HttpStatusError) -> str | None:
+    if error.status == 401:
+        return "authentication_failed"
+    if error.status == 404 and error.path in _COMPATIBILITY_OR_AVAILABILITY_PATHS:
+        return "version_mismatch"
+    if error.status == 503:
+        return "server_unavailable"
+    if error.status in {404, 409, 422}:
+        return None
+    return "invalid_response"
 
 
 def main(settings: CodexPluginSettings | None = None) -> int:
@@ -275,10 +296,10 @@ def _post_json(
         request_deadline = min(deadline, monotonic() + request_timeout)
         with _URL_OPENER.open(request, timeout=request_timeout) as response:
             if expected_status is not None and response.status != expected_status:
-                raise _HttpStatusError(response.status)
+                raise _HttpStatusError(response.status, path)
             result = json.loads(_read_response(response, deadline=request_deadline))
     except HTTPError as error:
-        raise _HttpStatusError(error.code) from error
+        raise _HttpStatusError(error.code, path) from error
     except TimeoutError as error:
         raise _ServerUnavailableError from error
     except OSError as error:
@@ -341,21 +362,15 @@ def _recall_context(
     try:
         prepared = _validate_prepared_context(_prepare_context(query, scope_id, settings=settings, deadline=deadline))
     except _HttpStatusError as error:
-        if error.status == 401:
-            outcome = "authentication_failed"
-        elif error.status == 404:
-            outcome = "version_mismatch"
-        elif error.status == 503:
-            outcome = "server_unavailable"
-        else:
-            outcome = "invalid_response"
-        _emit_context_event(
-            outcome,
-            http_status=error.status,
-            recovery="powercontext doctor" if outcome == "server_unavailable" else None,
-            emitted_diagnostics=emitted_diagnostics,
-            diagnostic_events=diagnostic_events,
-        )
+        outcome = _http_failure_outcome(error)
+        if outcome is not None:
+            _emit_context_event(
+                outcome,
+                http_status=error.status,
+                recovery="powercontext doctor" if outcome == "server_unavailable" else None,
+                emitted_diagnostics=emitted_diagnostics,
+                diagnostic_events=diagnostic_events,
+            )
         return None
     except (_ServerUnavailableError, TimeoutError):
         _emit_context_event(
@@ -482,22 +497,16 @@ def _emit_failure_event(
     diagnostic_events: list[dict[str, object]] | None = None,
 ) -> None:
     if isinstance(error, _HttpStatusError):
-        if error.status == 401:
-            outcome = "authentication_failed"
-        elif error.status == 404:
-            outcome = "version_mismatch"
-        elif error.status == 503:
-            outcome = "server_unavailable"
-        else:
-            outcome = "invalid_response"
-        _emit_context_event(
-            outcome,
-            event_name=event_name,
-            http_status=error.status,
-            recovery="powercontext doctor" if outcome == "server_unavailable" else None,
-            emitted_diagnostics=emitted_diagnostics,
-            diagnostic_events=diagnostic_events,
-        )
+        outcome = _http_failure_outcome(error)
+        if outcome is not None:
+            _emit_context_event(
+                outcome,
+                event_name=event_name,
+                http_status=error.status,
+                recovery="powercontext doctor" if outcome == "server_unavailable" else None,
+                emitted_diagnostics=emitted_diagnostics,
+                diagnostic_events=diagnostic_events,
+            )
     elif isinstance(error, (_ServerUnavailableError, TimeoutError)):
         _emit_context_event(
             "server_unavailable",

@@ -98,7 +98,8 @@ async function recallContent(input: RecallInput, query: string, scopeId: string)
     input.log({ event: 'context_prepare', outcome: 'ready', http_status: 200, context_status: 'ready', content_bytes: prepared.content_bytes })
     return prepared.content ?? undefined
   } catch (error) {
-    input.log(failureEvent('context_prepare', error))
+    const diagnostic = failureEvent('context_prepare', error)
+    if (diagnostic) input.log(diagnostic)
     return undefined
   }
 }
