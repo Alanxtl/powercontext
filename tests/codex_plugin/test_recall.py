@@ -579,11 +579,53 @@ def test_context_prepare_404_is_reported_as_a_version_mismatch(
     assert json.loads(errors.getvalue())["outcome"] == "version_mismatch"
 
 
-@pytest.mark.parametrize("status", [404, 409, 422])
-def test_capture_domain_errors_do_not_emit_availability_diagnostics(
+@pytest.mark.parametrize(
+    ("status", "code"),
+    [(404, "invalid_request"), (409, "scope_conflict"), (422, "invalid_request")],
+)
+def test_context_prepare_domain_errors_remain_visible(
     recall_module: ModuleType,
     monkeypatch: pytest.MonkeyPatch,
     status: int,
+    code: str,
+) -> None:
+    monkeypatch.setattr(
+        recall_module,
+        "_prepare_context",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            recall_module._HttpStatusError(status, "/v1/context/prepare", code)
+        ),
+    )
+    errors = io.StringIO()
+    monkeypatch.setattr(sys, "stderr", errors)
+
+    assert (
+        recall_module._recall_context(
+            "query",
+            "project:test",
+            settings=recall_module.CodexPluginSettings(),
+            deadline=time.monotonic() + 1,
+        )
+        is None
+    )
+    assert json.loads(errors.getvalue()) == {
+        "component": "powercontext.codex.recall",
+        "event": "context_prepare",
+        "outcome": "invalid_response",
+        "http_status": status,
+        "error_code": code,
+    }
+
+
+@pytest.mark.parametrize(
+    ("status", "code"),
+    [(404, "source_not_found"), (409, "source_conflict"), (422, "invalid_request")],
+)
+def test_capture_domain_errors_remain_visible_as_automatic_failures(
+    recall_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    status: int,
+    code: str,
 ) -> None:
     monkeypatch.setattr(recall_module, "_prepare_context", lambda *_args, **_kwargs: _prepared("prepared context"))
     monkeypatch.setattr(recall_module, "resolve_scope_id", lambda *_args, **_kwargs: "project:test")
@@ -591,7 +633,7 @@ def test_capture_domain_errors_do_not_emit_availability_diagnostics(
         recall_module,
         "_capture_prompt",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            recall_module._HttpStatusError(status, "/v1/memory/entries/get")
+            recall_module._HttpStatusError(status, "/v1/sources/content", code)
         ),
     )
 
@@ -614,7 +656,56 @@ def test_capture_domain_errors_do_not_emit_availability_diagnostics(
     assert recall_module.main() == 0
     result = json.loads(output.getvalue())
     assert result["hookSpecificOutput"]["additionalContext"] == "prepared context"
-    assert "systemMessage" not in result
+    assert json.loads(result["systemMessage"]) == {
+        "component": "powercontext.codex.recall",
+        "event": "capture_source",
+        "outcome": "invalid_response",
+        "http_status": status,
+        "error_code": code,
+    }
+    assert errors.getvalue() == ""
+
+
+def test_flush_domain_error_remains_visible_as_an_automatic_failure(
+    recall_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(recall_module, "_prepare_context", lambda *_args, **_kwargs: _prepared("prepared context"))
+    monkeypatch.setattr(recall_module, "resolve_scope_id", lambda *_args, **_kwargs: "project:test")
+    monkeypatch.setattr(recall_module, "_capture_prompt", lambda *_args, **_kwargs: {"position": 1})
+    monkeypatch.setattr(
+        recall_module,
+        "_flush_through",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            recall_module._HttpStatusError(422, "/v1/memory/flush", "invalid_request")
+        ),
+    )
+
+    output = io.StringIO()
+    errors = io.StringIO()
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        io.StringIO(json.dumps({
+            "hook_event_name": "UserPromptSubmit",
+            "cwd": "/workspace/project",
+            "prompt": "Recall before flushing",
+        })),
+    )
+    monkeypatch.setattr(sys, "stdout", output)
+    monkeypatch.setattr(sys, "stderr", errors)
+
+    settings = recall_module.CodexPluginSettings(flush_on_capture=True)
+    assert recall_module.main(settings=settings) == 0
+
+    result = json.loads(output.getvalue())
+    assert json.loads(result["systemMessage"]) == {
+        "component": "powercontext.codex.recall",
+        "event": "flush_memory",
+        "outcome": "invalid_response",
+        "http_status": 422,
+        "error_code": "invalid_request",
+    }
     assert errors.getvalue() == ""
 
 
@@ -769,6 +860,36 @@ def test_hook_refuses_redirects(
                 )
 
     assert target_headers == []
+
+
+def test_http_error_preserves_structured_error_code(recall_module: ModuleType) -> None:
+    class ErrorHandler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            body = b'{"error":{"code":"invalid_request","message":"bad request"}}'
+            self.send_response(422)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
+            pass
+
+    with _serve(ErrorHandler) as server_url:
+        settings = recall_module.CodexPluginSettings()
+        object.__setattr__(settings, "server_url", server_url)
+        with pytest.raises(recall_module._HttpStatusError) as caught:
+            recall_module._post_json(
+                "/v1/context/prepare",
+                {},
+                settings=settings,
+                deadline=time.monotonic() + 1,
+                expected_status=200,
+            )
+
+    assert caught.value.status == 422
+    assert caught.value.path == "/v1/context/prepare"
+    assert caught.value.code == "invalid_request"
 
 
 def test_hook_aborts_a_slow_response_at_the_request_deadline(

@@ -50,11 +50,11 @@ def _locked(lock_path: Path) -> Iterator[None]:
                 lock_file.write(b"\0")
                 lock_file.flush()
             lock_file.seek(0)
-            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
         else:
             import fcntl
 
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         try:
             yield
         finally:

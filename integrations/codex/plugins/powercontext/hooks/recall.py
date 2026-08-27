@@ -85,9 +85,10 @@ _URL_OPENER = build_opener(_RejectRedirects)
 
 
 class _HttpStatusError(RuntimeError):
-    def __init__(self, status: int, path: str = "/v1/context/prepare") -> None:
+    def __init__(self, status: int, path: str = "/v1/context/prepare", code: str | None = None) -> None:
         self.status = status
         self.path = path
+        self.code = code
         super().__init__(f"PowerContext returned HTTP {status}")
 
 
@@ -101,18 +102,41 @@ _COMPATIBILITY_OR_AVAILABILITY_PATHS = frozenset({
     "/v1/capabilities",
     "/v1/context/prepare",
 })
+_AUTOMATIC_OPERATION_PATHS = {
+    "context_prepare": "/v1/context/prepare",
+    "capture_source": "/v1/sources/content",
+    "flush_memory": "/v1/memory/flush",
+}
 
 
-def _http_failure_outcome(error: _HttpStatusError) -> str | None:
+def _http_failure_outcome(error: _HttpStatusError, *, operation: str) -> str | None:
     if error.status == 401:
         return "authentication_failed"
-    if error.status == 404 and error.path in _COMPATIBILITY_OR_AVAILABILITY_PATHS:
+    if (
+        error.status == 404
+        and error.path in _COMPATIBILITY_OR_AVAILABILITY_PATHS
+        and error.code is None
+    ):
         return "version_mismatch"
     if error.status == 503:
         return "server_unavailable"
     if error.status in {404, 409, 422}:
-        return None
+        return "invalid_response" if _AUTOMATIC_OPERATION_PATHS.get(operation) == error.path else None
     return "invalid_response"
+
+
+def _decode_error_code(raw: bytes) -> str | None:
+    try:
+        decoded = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(decoded, dict):
+        return None
+    error = decoded.get("error")
+    if not isinstance(error, dict):
+        return None
+    code = error.get("code")
+    return code if isinstance(code, str) else None
 
 
 def main(settings: CodexPluginSettings | None = None) -> int:
@@ -145,30 +169,16 @@ def main(settings: CodexPluginSettings | None = None) -> int:
             emitted_diagnostics=emitted_diagnostics,
             diagnostic_events=diagnostic_events,
         )
-        if settings.capture_prompts and len(prompt) <= _MAX_SOURCE_LENGTH:
-            try:
-                captured = _capture_prompt(
-                    payload,
-                    prompt=prompt,
-                    cwd=cwd,
-                    scope_id=scope_id,
-                    settings=settings,
-                    deadline=http_deadline,
-                )
-                if settings.flush_on_capture:
-                    _flush_through(
-                        scope_id,
-                        _source_position(captured),
-                        settings=settings,
-                        deadline=http_deadline,
-                    )
-            except Exception as error:
-                _emit_failure_event(
-                    "capture_source",
-                    error,
-                    emitted_diagnostics=emitted_diagnostics,
-                    diagnostic_events=diagnostic_events,
-                )
+        _capture_and_flush(
+            payload,
+            prompt=prompt,
+            cwd=cwd,
+            scope_id=scope_id,
+            settings=settings,
+            deadline=http_deadline,
+            emitted_diagnostics=emitted_diagnostics,
+            diagnostic_events=diagnostic_events,
+        )
         if context:
             with suppress(Exception):
                 _record_evaluation_trace(
@@ -181,6 +191,50 @@ def main(settings: CodexPluginSettings | None = None) -> int:
     except Exception:
         return 0
     return 0
+
+
+def _capture_and_flush(
+    payload: Mapping[str, object],
+    *,
+    prompt: str,
+    cwd: str,
+    scope_id: str,
+    settings: CodexPluginSettings,
+    deadline: float,
+    emitted_diagnostics: set[str],
+    diagnostic_events: list[dict[str, object]],
+) -> None:
+    if not settings.capture_prompts or len(prompt) > _MAX_SOURCE_LENGTH:
+        return
+    try:
+        captured = _capture_prompt(
+            payload,
+            prompt=prompt,
+            cwd=cwd,
+            scope_id=scope_id,
+            settings=settings,
+            deadline=deadline,
+        )
+        position = _source_position(captured)
+    except Exception as error:
+        _emit_failure_event(
+            "capture_source",
+            error,
+            emitted_diagnostics=emitted_diagnostics,
+            diagnostic_events=diagnostic_events,
+        )
+        return
+    if not settings.flush_on_capture:
+        return
+    try:
+        _flush_through(scope_id, position, settings=settings, deadline=deadline)
+    except Exception as error:
+        _emit_failure_event(
+            "flush_memory",
+            error,
+            emitted_diagnostics=emitted_diagnostics,
+            diagnostic_events=diagnostic_events,
+        )
 
 
 def _prepare_context(
@@ -296,10 +350,15 @@ def _post_json(
         request_deadline = min(deadline, monotonic() + request_timeout)
         with _URL_OPENER.open(request, timeout=request_timeout) as response:
             if expected_status is not None and response.status != expected_status:
-                raise _HttpStatusError(response.status, path)
+                code = _decode_error_code(_read_response(response, deadline=request_deadline))
+                raise _HttpStatusError(response.status, path, code)
             result = json.loads(_read_response(response, deadline=request_deadline))
     except HTTPError as error:
-        raise _HttpStatusError(error.code, path) from error
+        try:
+            error_body = error.read(_MAX_RESPONSE_BYTES + 1)
+        except (OSError, TimeoutError):
+            error_body = b""
+        raise _HttpStatusError(error.code, path, _decode_error_code(error_body)) from error
     except TimeoutError as error:
         raise _ServerUnavailableError from error
     except OSError as error:
@@ -362,11 +421,12 @@ def _recall_context(
     try:
         prepared = _validate_prepared_context(_prepare_context(query, scope_id, settings=settings, deadline=deadline))
     except _HttpStatusError as error:
-        outcome = _http_failure_outcome(error)
+        outcome = _http_failure_outcome(error, operation="context_prepare")
         if outcome is not None:
             _emit_context_event(
                 outcome,
                 http_status=error.status,
+                error_code=error.code,
                 recovery="powercontext doctor" if outcome == "server_unavailable" else None,
                 emitted_diagnostics=emitted_diagnostics,
                 diagnostic_events=diagnostic_events,
@@ -457,6 +517,7 @@ def _emit_context_event(
     *,
     event_name: str = "context_prepare",
     http_status: int | None = None,
+    error_code: str | None = None,
     context_status: str | None = None,
     content_bytes: int | None = None,
     recovery: str | None = None,
@@ -477,6 +538,8 @@ def _emit_context_event(
     }
     if http_status is not None:
         event["http_status"] = http_status
+    if error_code is not None:
+        event["error_code"] = error_code
     if context_status is not None:
         event["context_status"] = context_status
     if content_bytes is not None:
@@ -497,12 +560,13 @@ def _emit_failure_event(
     diagnostic_events: list[dict[str, object]] | None = None,
 ) -> None:
     if isinstance(error, _HttpStatusError):
-        outcome = _http_failure_outcome(error)
+        outcome = _http_failure_outcome(error, operation=event_name)
         if outcome is not None:
             _emit_context_event(
                 outcome,
                 event_name=event_name,
                 http_status=error.status,
+                error_code=error.code,
                 recovery="powercontext doctor" if outcome == "server_unavailable" else None,
                 emitted_diagnostics=emitted_diagnostics,
                 diagnostic_events=diagnostic_events,
