@@ -112,11 +112,7 @@ _AUTOMATIC_OPERATION_PATHS = {
 def _http_failure_outcome(error: _HttpStatusError, *, operation: str) -> str | None:
     if error.status == 401:
         return "authentication_failed"
-    if (
-        error.status == 404
-        and error.path in _COMPATIBILITY_OR_AVAILABILITY_PATHS
-        and error.code is None
-    ):
+    if error.status == 404 and error.path in _COMPATIBILITY_OR_AVAILABILITY_PATHS and error.code is None:
         return "version_mismatch"
     if error.status == 503:
         return "server_unavailable"

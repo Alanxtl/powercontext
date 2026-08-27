@@ -35,7 +35,7 @@ def _load_diagnostics(name: str, path: Path) -> ModuleType:
 
 
 def _lock_holder_code() -> str:
-    return r'''
+    return r"""
 import os
 import sys
 from pathlib import Path
@@ -67,7 +67,7 @@ with path.open("a+b") as lock_file:
         import fcntl
 
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-'''
+"""
 
 
 @pytest.mark.parametrize(

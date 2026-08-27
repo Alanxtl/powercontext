@@ -686,11 +686,13 @@ def test_flush_domain_error_remains_visible_as_an_automatic_failure(
     monkeypatch.setattr(
         sys,
         "stdin",
-        io.StringIO(json.dumps({
-            "hook_event_name": "UserPromptSubmit",
-            "cwd": "/workspace/project",
-            "prompt": "Recall before flushing",
-        })),
+        io.StringIO(
+            json.dumps({
+                "hook_event_name": "UserPromptSubmit",
+                "cwd": "/workspace/project",
+                "prompt": "Recall before flushing",
+            })
+        ),
     )
     monkeypatch.setattr(sys, "stdout", output)
     monkeypatch.setattr(sys, "stderr", errors)
