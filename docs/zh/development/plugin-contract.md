@@ -24,16 +24,32 @@ direct tool、slash command 以及 health/status check。
 
 | Outcome | 分类规则 |
 | --- | --- |
-| `authentication_failed` | HTTP 401。 |
-| `version_mismatch` | HTTP 404，通常表示 endpoint 不兼容或不存在。 |
+| `authentication_failed` | typed authentication failure，通常为 HTTP 401。 |
+| `version_mismatch` | 必须来自兼容性或 availability endpoint 的 HTTP 404；不能从 direct resource lookup 的状态码推断。 |
 | `server_unavailable` | 连接失败、超时、请求中止或 HTTP 503。 |
-| `invalid_response` | 其他 HTTP failure、JSON 损坏、响应结构错误或解码/schema failure。 |
+| `invalid_response` | JSON 损坏、响应结构错误、解码/schema failure，或完成 operation-specific domain 分类后仍未分类的 HTTP failure。 |
 
 合法但为空的结果不是失败诊断。尤其是空的 memory 结果不能报告为 `server_unavailable`。
 
+### Operation-specific domain error
+
+Direct tool 和 command 在 Server 已处理请求后，可能返回合法的 domain error。Client 必须先根据 typed domain
+error 分类，再应用插件可见诊断映射：
+
+| Domain result | Direct operation 含义 |
+| --- | --- |
+| `not_found` | HTTP 404，表示 Memory entry、citation 或其他请求资源不存在。 |
+| `conflict` | HTTP 409，表示 revision、source、citation 或其他 operation conflict。 |
+| `invalid_request` | HTTP 422，表示 request 违反 wire 或 application contract。 |
+
+这些 domain result 必须保留在 direct operation result 中，不能改写成 `version_mismatch` 或 `invalid_response`。
+明确标识为兼容性或 availability endpoint 的 404 仍然是 `version_mismatch`；应由 operation identifier 或 endpoint
+contract，而不是单独的 status code，决定分类。
+
 ## 诊断事件格式
 
-每条诊断必须通过插件支持的通道写出一个单行 JSON object：
+每条诊断必须通过插件支持的通道写出一个单行 JSON object。对于基于 Hook 的宿主，事件编码在成功 stdout
+Hook JSON 顶层的 `systemMessage` 值中，不要求作为独立的 stdout 行输出。
 
 ```json
 {
@@ -71,14 +87,16 @@ direct tool、slash command 以及 health/status check。
 
 | 插件 | 通道 | Component 前缀 |
 | --- | --- | --- |
-| Codex | Hook `stderr` | `powercontext.codex.recall` |
-| Claude Code | Hook `stderr` | `powercontext.claude_code.recall` |
+| Codex | Hook stdout 顶层 `systemMessage` | `powercontext.codex.recall` |
+| Claude Code | Hook stdout 顶层 `systemMessage` | `powercontext.claude_code.recall` |
 | DSH | 插件 logger warning | `powercontext.dsh` |
 | OpenClaw | Plugin API logger warning | `powercontext.openclaw` |
 | Pi | 插件终端 warning（`console.warn`） | `powercontext.pi` |
 | Hermes | Plugin logger warning | `powercontext.hermes` |
 
 插件侧 operation result 可以继续返回 `PowerContext operation failed` 这类通用错误。结构化诊断是恢复信号，通用错误只服务于 host/model 控制流。
+Hook 同时注入 context 时，stdout JSON 必须保留 `hookSpecificOutput`，并与 `systemMessage` 并列。Hook 可以继续
+向 stderr 写本地调试信息，但 Codex 和 Claude Code 的用户可见通道不是 stderr。
 
 ## Fail-open、隐私和展示边界
 
@@ -91,8 +109,9 @@ PowerContext operation 失败时：
 
 诊断不能包含 endpoint URL、authorization header、token、cookie、filesystem path、prompt、query、capture text、recall text、response body 或 stack trace。
 
-重复失败必须有展示边界。长生命周期插件应该按 `outcome` 去重 60 秒。短生命周期 hook 可以在一次 invocation 内去重，但不能为一个失败无限输出诊断。
-去重 key 是 outcome，不能使用 user input 或 request payload。
+重复失败必须在跨 invocation 的范围内有展示边界。长生命周期插件应该按 `outcome` 去重 60 秒。短生命周期 hook
+必须使用宿主级或持久化本地状态跨 invocation 执行该限制；一次 invocation 内的 set 可以作为额外去重手段。去重
+key 是 outcome，不能使用 user input 或 request payload。
 
 ## 本 RFC 的插件实现约定
 
@@ -114,9 +133,10 @@ PowerContext operation 失败时：
 1. 传输失败或超时产生 `server_unavailable` 和 `powercontext doctor`。
 2. HTTP 503 产生带有 `http_status: 503` 的 `server_unavailable`。
 3. HTTP 401 产生 `authentication_failed`。
-4. HTTP 404 产生 `version_mismatch`。
-5. 其他 HTTP failure 和 malformed response 产生 `invalid_response`。
-6. 重复失败在约定边界内去重。
+4. 缺失的兼容性或 availability endpoint 产生 `version_mismatch`，direct resource 404 保留 `not_found`。
+5. Direct 409 和 422 分别保留 `conflict` 与 `invalid_request`；其他未分类 HTTP failure 和 malformed response 产生
+   `invalid_response`。
+6. 在约定 cooldown 内执行两次独立 Hook invocation 时，最多产生一条相同诊断。
 7. 在插件提供这些入口时，recall、capture、flush、direct tool、slash command 和 status path 都保持 fail-open。
 8. 诊断不包含 URL、token、prompt、query、response body 或 stack trace。
 9. 对应的插件 runner、type checker 或 smoke test 通过。

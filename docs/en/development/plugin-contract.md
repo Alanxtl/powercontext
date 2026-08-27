@@ -28,17 +28,35 @@ an exception message.
 
 | Outcome | Classification |
 | --- | --- |
-| `authentication_failed` | HTTP 401. |
-| `version_mismatch` | HTTP 404, normally an incompatible or missing endpoint. |
+| `authentication_failed` | A typed authentication failure, normally HTTP 401. |
+| `version_mismatch` | HTTP 404 from a required compatibility or availability endpoint; it MUST NOT be inferred from a direct resource lookup. |
 | `server_unavailable` | Connection failure, timeout, aborted request, or HTTP 503. |
-| `invalid_response` | Other HTTP failures, malformed JSON, invalid response shape, or decoding/schema failures. |
+| `invalid_response` | Malformed JSON, invalid response shape, decoding/schema failure, or an otherwise unclassified HTTP failure after operation-specific domain classification. |
 
 An empty but valid result is not a failure diagnostic. In particular, an empty memory result MUST NOT be reported as
 `server_unavailable`.
 
+### Operation-specific domain errors
+
+Direct tools and commands can receive valid domain errors after the Server has processed the request. The client MUST
+classify typed domain errors before applying the Plugin-visible diagnostic mapping:
+
+| Domain result | Direct operation meaning |
+| --- | --- |
+| `not_found` | HTTP 404 for a missing Memory entry, citation, or other requested resource. |
+| `conflict` | HTTP 409 for a revision, source, citation, or other operation conflict. |
+| `invalid_request` | HTTP 422 for a request that violates the wire or application contract. |
+
+These domain results MUST be preserved in the direct operation result and MUST NOT be rewritten as
+`version_mismatch` or `invalid_response`. A 404 from an explicitly identified compatibility or availability endpoint
+remains `version_mismatch`; the operation identifier or endpoint contract, not the status code alone, determines that
+classification.
+
 ## Diagnostic event format
 
-Each diagnostic MUST be one JSON object written as one line through the Plugin's supported channel:
+Each diagnostic MUST be one JSON object written as one line through the Plugin's supported channel. For hook-based
+hosts, the event is encoded as the top-level `systemMessage` value in the successful stdout hook JSON; the event is
+not required to be rendered as a standalone stdout line.
 
 ```json
 {
@@ -78,15 +96,17 @@ or a successful tool result.
 
 | Plugin | Channel | Component prefix |
 | --- | --- | --- |
-| Codex | Hook `stderr` | `powercontext.codex.recall` |
-| Claude Code | Hook `stderr` | `powercontext.claude_code.recall` |
+| Codex | Hook stdout top-level `systemMessage` | `powercontext.codex.recall` |
+| Claude Code | Hook stdout top-level `systemMessage` | `powercontext.claude_code.recall` |
 | DSH | Plugin logger warning | `powercontext.dsh` |
 | OpenClaw | Plugin API logger warning | `powercontext.openclaw` |
 | Pi | Plugin terminal warning (`console.warn`) | `powercontext.pi` |
 | Hermes | Plugin logger warning | `powercontext.hermes` |
 
 The Plugin-facing operation result MAY remain a generic error such as `PowerContext operation failed`. The structured
-diagnostic is the recovery signal; the generic result is only for Plugin/model control flow.
+diagnostic is the recovery signal; the generic result is only for Plugin/model control flow. When a hook also injects
+context, its stdout JSON MUST retain `hookSpecificOutput` alongside `systemMessage`. Hook diagnostics MAY still be
+written to stderr for local debugging, but stderr is not the user-visible channel for Codex or Claude Code.
 
 ## Fail-open, privacy, and presentation bounds
 
@@ -100,9 +120,10 @@ When a PowerContext operation fails:
 Diagnostics MUST NOT contain endpoint URLs, authorization headers, tokens, cookies, filesystem paths, prompts, queries,
 captured text, recalled text, response bodies, or stack traces.
 
-Repeated failures MUST have bounded presentation. Long-lived plugins SHOULD deduplicate by `outcome` for 60 seconds.
-Short-lived hooks MAY deduplicate within one invocation, but MUST NOT emit an unbounded stream for one failure. The
-deduplication key is the outcome, not user input or the request payload.
+Repeated failures MUST have bounded presentation across invocations. Long-lived plugins SHOULD deduplicate by `outcome`
+for 60 seconds. Short-lived hooks MUST use a host-level or durable local state mechanism to enforce the bound across
+invocations; an invocation-local set MAY provide additional deduplication. The deduplication key is the outcome, not
+user input or the request payload.
 
 ## Plugin implementation conventions for this RFC
 
@@ -125,9 +146,11 @@ Each plugin PR that implements this RFC MUST test the following observable behav
 1. Transport failure or timeout produces `server_unavailable` and `powercontext doctor`.
 2. HTTP 503 produces `server_unavailable` with `http_status: 503`.
 3. HTTP 401 produces `authentication_failed`.
-4. HTTP 404 produces `version_mismatch`.
-5. Other HTTP failures and malformed responses produce `invalid_response`.
-6. Repeated failures are deduplicated within the documented bound.
+4. A missing compatibility or availability endpoint produces `version_mismatch`, while a direct resource 404 preserves
+   `not_found`.
+5. Direct 409 and 422 responses preserve `conflict` and `invalid_request`; other unclassified HTTP failures and
+   malformed responses produce `invalid_response`.
+6. Two separate hook invocations within the documented cooldown produce at most one identical diagnostic.
 7. Recall, capture, flush, direct tool, slash command, and status paths remain fail-open where the Plugin exposes them.
 8. The diagnostic contains no URL, token, prompt, query, response body, or stack trace.
 9. The matching Plugin runner, type checker, or smoke test passes.
