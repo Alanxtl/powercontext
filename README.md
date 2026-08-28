@@ -41,7 +41,8 @@ powercontext setup pi --source oceanbase/powercontext --ref master
 powercontext setup workbuddy --source oceanbase/powercontext --ref master
 
 # Or install several hosts in one pass.
-powercontext setup select --host codex --host claude-code --host opencode
+powercontext setup select --host codex --host claude-code --host opencode \
+  --source oceanbase/powercontext --ref master
 ```
 
 The first command installs the CLI and local Server from the latest `master` revision in an isolated environment.
@@ -60,7 +61,8 @@ In another terminal, verify the service and plugin:
 
 ```bash
 powercontext doctor
-powercontext doctor codex  # or: claude-code / dsh / hermes / openclaw / opencode / pi / workbuddy
+powercontext doctor integrations
+powercontext doctor codex  # Replace codex with the host you installed.
 ```
 
 By default, the Server listens on `127.0.0.1:8000`, exposes Streamable HTTP MCP at `/mcp`, and persists data in a

@@ -41,7 +41,8 @@ powercontext setup pi --source oceanbase/powercontext --ref master
 powercontext setup workbuddy --source oceanbase/powercontext --ref master
 
 # 複数の Host を一度にインストールすることもできます。
-powercontext setup select --host codex --host claude-code --host opencode
+powercontext setup select --host codex --host claude-code --host opencode \
+  --source oceanbase/powercontext --ref master
 ```
 
 最初のコマンドは、隔離された環境に最新の `master` revision から CLI とローカル Server をインストールします。
@@ -60,7 +61,8 @@ powercontext server run
 
 ```bash
 powercontext doctor
-powercontext doctor codex  # または: claude-code / dsh / hermes / openclaw / opencode / pi / workbuddy
+powercontext doctor integrations
+powercontext doctor codex  # codex をインストールした Host 名に置き換えてください。
 ```
 
 デフォルトでは、Server は `127.0.0.1:8000` で待ち受け、`/mcp` で Streamable HTTP MCP を公開し、

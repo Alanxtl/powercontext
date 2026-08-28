@@ -39,7 +39,8 @@ powercontext setup pi --source oceanbase/powercontext --ref master
 powercontext setup workbuddy --source oceanbase/powercontext --ref master
 
 # 或者一次性安装多个 Host。
-powercontext setup select --host codex --host claude-code --host opencode
+powercontext setup select --host codex --host claude-code --host opencode \
+  --source oceanbase/powercontext --ref master
 ```
 
 第一条命令会在隔离环境中从最新 `master` revision 安装 CLI 和本地 Server；每条 setup 命令都会从同一个
@@ -57,7 +58,8 @@ powercontext server run
 
 ```bash
 powercontext doctor
-powercontext doctor codex  # 或: claude-code / dsh / hermes / openclaw / opencode / pi / workbuddy
+powercontext doctor integrations
+powercontext doctor codex  # 请把 codex 换成已安装的宿主。
 ```
 
 默认情况下，Server 监听 `127.0.0.1:8000`，在 `/mcp` 提供 Streamable HTTP MCP，并将数据持久化到本地
