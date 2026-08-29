@@ -230,6 +230,50 @@ def test_runtime_stage_isolates_tracer_failure(monkeypatch) -> None:
     assert exporter.get_finished_spans() == ()
 
 
+def test_runtime_stage_records_explicit_noop_and_failure_outcomes() -> None:
+    tracing, exporter = _tracing()
+
+    with tracing.stage("memory.flush", attributes={}) as noop:
+        noop.set_outcome("noop")
+    with tracing.stage("memory.flush", attributes={}) as failed:
+        failed.set_outcome("failure")
+
+    spans = [span for span in exporter.get_finished_spans() if span.name == "memory.flush"]
+    assert len(spans) == 2
+    outcomes = {span.attributes["powercontext.operation.outcome"] for span in spans if span.attributes is not None}
+    assert outcomes == {"noop", "failure"}
+    failed_span = next(
+        span for span in spans if span.attributes is not None and span.attributes["powercontext.operation.outcome"] == "failure"
+    )
+    assert failed_span.status.status_code is StatusCode.ERROR
+
+
+def test_background_stage_starts_a_fresh_trace_outside_an_ambient_span() -> None:
+    tracing, exporter = _tracing()
+    ambient = tracing.start_span("HTTP flush_memory", kind=SpanKind.SERVER, attributes={})
+
+    with tracing.background(
+        "scheduled.process_source_window",
+        operation="process_source_window",
+        attributes={},
+    ) as stage:
+        stage.set_outcome("noop")
+        stage.set_attributes({"powercontext.background.source_count": 0})
+    ambient.finish("success")
+
+    spans = {span.name: span for span in exporter.get_finished_spans()}
+    ambient_span = spans["HTTP flush_memory"]
+    root = spans["scheduled.process_source_window"]
+    assert root.parent is None
+    assert root.context.trace_id != ambient_span.context.trace_id
+    assert root.kind is SpanKind.INTERNAL
+    attributes = root.attributes or {}
+    assert attributes["powercontext.operation.name"] == "process_source_window"
+    assert attributes["powercontext.operation.unit"] == "background"
+    assert attributes["powercontext.operation.outcome"] == "noop"
+    assert attributes["powercontext.background.source_count"] == 0
+
+
 def test_readiness_ignores_tracing_setup_failure(monkeypatch, tmp_path) -> None:
     tracing, _ = _tracing(instrumented=True)
     app = create_server_app(

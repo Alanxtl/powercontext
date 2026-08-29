@@ -138,7 +138,37 @@ class ServerTracing:
         except BaseException as error:
             span.finish("failure", error=error)
             raise
-        span.finish("success")
+        span.finish(span.outcome or "success")
+
+    @contextmanager
+    def background(
+        self,
+        name: str,
+        *,
+        operation: str,
+        attributes: Mapping[str, _TraceAttribute],
+    ) -> Iterator[_ActiveSpan]:
+        """Trace one scheduled activation as an independent trace root."""
+
+        span = self.start_span(
+            name,
+            kind=SpanKind.INTERNAL,
+            context=Context(),
+            attributes={
+                **attributes,
+                "powercontext.operation.name": operation,
+                "powercontext.operation.unit": "background",
+            },
+        )
+        try:
+            yield span
+        except asyncio.CancelledError as error:
+            span.finish("cancelled", error=error)
+            raise
+        except BaseException as error:
+            span.finish("failure", error=error)
+            raise
+        span.finish(span.outcome or "success")
 
     @contextmanager
     def _suppress_readiness_spans(self) -> Iterator[None]:
@@ -178,6 +208,14 @@ class _ActiveSpan:
         self.span = span
         self.token = token
         self.finished = False
+        self._outcome: str | None = None
+
+    @property
+    def outcome(self) -> str | None:
+        return self._outcome
+
+    def set_outcome(self, outcome: str) -> None:
+        self._outcome = outcome
 
     @classmethod
     def start(
