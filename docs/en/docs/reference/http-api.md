@@ -19,7 +19,9 @@ With a local unauthenticated Server running, open:
 The checked-in source of truth is
 [`openapi/powercontext.yaml`](https://github.com/oceanbase/powercontext/blob/master/openapi/powercontext.yaml).
 Use it when generating a client or reviewing every request and response field. When Server authentication is enabled,
-the three discovery routes require the same bearer token as other protected routes.
+the three discovery routes require the same bearer token as other protected routes. A browser address bar cannot add
+that header: use a trusted proxy or browser setup that injects it, or download `/openapi.json` with an authenticated
+command after setting the variables below. Never put the token in the URL.
 
 ## Authenticate requests
 
@@ -41,6 +43,15 @@ Omit `--header "$POWERCONTEXT_AUTH_HEADER"` when authentication is disabled. The
 `/health/ready` endpoints are always public. See [Deploy the Server](../how-to/deploy-server.md) before allowing remote
 access.
 
+For an authenticated Server, download the exact contract served by that process with:
+
+```bash
+curl --fail \
+  --header "$POWERCONTEXT_AUTH_HEADER" \
+  --output powercontext-openapi.json \
+  "$POWERCONTEXT_URL/openapi.json"
+```
+
 ## Store and search one Memory
 
 Choose a stable `scope_id` for the project or tenant. Reuse it across sessions; a session ID is not a durable project
@@ -49,7 +60,7 @@ identity.
 Store one already-curated Memory entry:
 
 ```bash
-curl --fail-with-body \
+curl --fail \
   --request POST \
   --header 'Content-Type: application/json' \
   --header "$POWERCONTEXT_AUTH_HEADER" \
@@ -67,7 +78,7 @@ specific immutable revision.
 Search active entries in the same scope:
 
 ```bash
-curl --fail-with-body \
+curl --fail \
   --request POST \
   --header 'Content-Type: application/json' \
   --header "$POWERCONTEXT_AUTH_HEADER" \

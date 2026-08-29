@@ -18,7 +18,8 @@ HTTP API 是访问 PowerContext Server 的语言无关接口。默认 base URL �
 仓库中的契约源文件是
 [`openapi/powercontext.yaml`](https://github.com/oceanbase/powercontext/blob/master/openapi/powercontext.yaml)。
 生成客户端或检查全部请求、响应字段时以它为准。启用 Server 鉴权后，这三个发现路由与其他受保护路由一样需要 Bearer
-token。
+token。浏览器地址栏无法添加该 header；应使用可信的代理或浏览器配置注入 header，或者设置下方变量后，通过带鉴权的
+命令下载 `/openapi.json`。不要把 token 放进 URL。
 
 ## 请求鉴权
 
@@ -38,6 +39,15 @@ POWERCONTEXT_AUTH_HEADER="Authorization: Bearer ${POWERCONTEXT_CLIENT_API_TOKEN}
 未启用鉴权时，请去掉 `--header "$POWERCONTEXT_AUTH_HEADER"`。`/health/live` 和 `/health/ready` 始终公开。
 允许远程访问前，请先阅读[部署 Server](../how-to/deploy-server.md)。
 
+Server 启用鉴权时，可以用以下命令下载该进程实际提供的契约：
+
+```bash
+curl --fail \
+  --header "$POWERCONTEXT_AUTH_HEADER" \
+  --output powercontext-openapi.json \
+  "$POWERCONTEXT_URL/openapi.json"
+```
+
 ## 保存并搜索一条 Memory
 
 为项目或租户选择稳定的 `scope_id`，并在不同会话中复用。会话 ID 不是持久的项目身份。
@@ -45,7 +55,7 @@ POWERCONTEXT_AUTH_HEADER="Authorization: Bearer ${POWERCONTEXT_CLIENT_API_TOKEN}
 保存一条已经整理好的 Memory：
 
 ```bash
-curl --fail-with-body \
+curl --fail \
   --request POST \
   --header 'Content-Type: application/json' \
   --header "$POWERCONTEXT_AUTH_HEADER" \
@@ -62,7 +72,7 @@ curl --fail-with-body \
 在同一个 scope 中搜索 active entry：
 
 ```bash
-curl --fail-with-body \
+curl --fail \
   --request POST \
   --header 'Content-Type: application/json' \
   --header "$POWERCONTEXT_AUTH_HEADER" \

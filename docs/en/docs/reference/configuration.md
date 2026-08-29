@@ -73,8 +73,14 @@ Server settings use the `POWERCONTEXT_SERVER_` prefix.
 | `POWERCONTEXT_SERVER_RUNTIME_MEMORY_RERANK_ENABLED` | `false` | Apply listwise reranking after coarse Memory retrieval |
 | `POWERCONTEXT_SERVER_RUNTIME_MEMORY_RERANK_CANDIDATE_LIMIT` | `30` | Coarse candidate pool supplied to the reranker |
 | `POWERCONTEXT_SERVER_RUNTIME_SCHEDULE_SECONDS` | unset | Scheduler interval; unset disables scheduling |
-| `POWERCONTEXT_SERVER_INFERENCE_GENERATION_MODEL` | unset | Pydantic AI model identifier for Memory extraction |
-| `POWERCONTEXT_SERVER_INFERENCE_GENERATION_TIMEOUT_SECONDS` | `30` | Generation timeout |
+| `POWERCONTEXT_SERVER_INFERENCE_GENERATION_MODEL` | unset | Pydantic AI model used by configured extraction, generation, Handoff, and reranking operations |
+| `POWERCONTEXT_SERVER_INFERENCE_GENERATION_TIMEOUT_SECONDS` | `30` | Timeout in seconds for one structured generation operation |
+| `POWERCONTEXT_SERVER_INFERENCE_GENERATION_MAX_REQUESTS` | `2` | Maximum provider requests for one structured generation operation, including retries |
+| `POWERCONTEXT_SERVER_INFERENCE_EMBEDDING_MODEL` | unset | Pydantic AI embedding model; requires profile ID and dimension |
+| `POWERCONTEXT_SERVER_INFERENCE_EMBEDDING_PROFILE_ID` | unset | Stable identity for the model, dimension, and normalization used by the vector index |
+| `POWERCONTEXT_SERVER_INFERENCE_EMBEDDING_DIMENSION` | unset | Positive output dimension requested from and validated against the embedding model |
+| `POWERCONTEXT_SERVER_INFERENCE_EMBEDDING_NORMALIZATION` | `unit` | Vector normalization: `unit` or `none` |
+| `POWERCONTEXT_SERVER_INFERENCE_EMBEDDING_TIMEOUT_SECONDS` | `30` | Timeout in seconds for one embedding request |
 | `POWERCONTEXT_SERVER_INFERENCE_EMBEDDING_BATCH_SIZE` | `10` | Maximum texts sent in one embedding request |
 | `POWERCONTEXT_SERVER_RUNTIME_EXPERIENCE_SCHEDULE_SECONDS` | unset | Experience incubation interval; unset disables that job |
 | `POWERCONTEXT_SERVER_EXTERNAL_SKILLS` | unset | JSON object containing the host identity and explicit Agent Skill targets |
@@ -97,6 +103,11 @@ practice, such as an in-process ASGI app, Unix-domain socket, or TLS-terminating
 The Dashboard is enabled by default and shares the Server listener and port with the HTTP API and MCP. With no scopes
 configured, the page shows an empty state. Dashboard initialization failures are logged with their direct cause and do
 not prevent the Server HTTP API, MCP, or health checks from starting.
+
+When bearer authentication is enabled, the HTML shells at `/`, `/skills`, `/reviews`, and `/handoff-reports`, plus
+their static assets, remain public so the browser can render the sign-in form. Data requests stay protected. Enter the
+Server token in that form; the browser keeps it only in the current tab's session storage. Disable both Dashboard and
+Handoff Report if even these sign-in pages must not be exposed.
 
 Handoff Report is independently enabled by default at `/handoff-reports`. When no scope contains a committed Handoff,
 it shows a data-free template preview. See [Use Handoff Report](../how-to/use-handoff-report.md) for scope discovery,

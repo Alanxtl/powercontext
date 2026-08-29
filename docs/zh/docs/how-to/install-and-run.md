@@ -11,11 +11,12 @@ description: 从 Git 安装 PowerContext，并运行本地 Server。
 [`uv`](https://docs.astral.sh/uv/)，然后从指定 Git ref 直接安装 PowerContext：
 
 ```bash
-uv tool install "powercontext[cli,server] @ git+https://github.com/oceanbase/powercontext.git@master"
+uv tool install --force "powercontext[cli,server] @ git+https://github.com/oceanbase/powercontext.git@master"
 ```
 
 该命令不会留下需要自行管理的仓库工作副本。Git 会沿用本机的凭据配置，包括 credential helper 和 SSH 设置。
-如需使用 SSH，请把 HTTPS URL 换成当前环境允许的 Git URL。
+如需使用 SSH，请把 HTTPS URL 换成当前环境允许的 Git URL。`--force` 还会从所选 Git ref 当前指向的 commit
+刷新已安装工具；如果不加该参数，`uv` 可能只提示相同 requirement 已安装，而不会获取更新后的 `master`。
 
 安装指定分支或 tag 时，替换最后一个 `@` 后的 `master`。配置集成时应使用同一个 ref：
 

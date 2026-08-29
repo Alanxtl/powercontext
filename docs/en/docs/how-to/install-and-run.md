@@ -11,12 +11,13 @@ You need Python 3.11 or newer, Git, and [`uv`](https://docs.astral.sh/uv/) on ma
 PowerContext directly from a Git ref:
 
 ```bash
-uv tool install "powercontext[cli,server] @ git+https://github.com/oceanbase/powercontext.git@master"
+uv tool install --force "powercontext[cli,server] @ git+https://github.com/oceanbase/powercontext.git@master"
 ```
 
 The command does not leave a repository checkout for you to manage. Git uses its normal credential configuration,
 including credential helpers and SSH settings. For an SSH-based install, replace the HTTPS URL with the Git URL
-approved for your environment.
+approved for your environment. `--force` also refreshes an existing tool from the current commit behind the selected
+Git ref; without it, `uv` may report the same requirement as already installed without fetching a newer `master`.
 
 To install a tested branch or tag, replace `master` after the final `@`. Use the same ref when configuring integrations:
 

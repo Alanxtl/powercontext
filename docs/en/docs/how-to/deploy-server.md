@@ -97,6 +97,9 @@ docker run --rm \
 
 Clients then send `Authorization: Bearer <token>`. The liveness and readiness endpoints remain public so an
 orchestrator can probe them. API, MCP, metrics, OpenAPI, and interactive API documentation require authentication.
+The Server's web-page shells and static assets remain public so they can show a sign-in form; they do not return
+protected data without the token. Open the Dashboard, Skills, Review, or Handoff Report page and enter the same token
+there. It remains in the current browser tab's session storage rather than being added to the URL.
 
 ## Check the deployment
 
