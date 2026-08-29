@@ -243,7 +243,9 @@ def test_runtime_stage_records_explicit_noop_and_failure_outcomes() -> None:
     outcomes = {span.attributes["powercontext.operation.outcome"] for span in spans if span.attributes is not None}
     assert outcomes == {"noop", "failure"}
     failed_span = next(
-        span for span in spans if span.attributes is not None and span.attributes["powercontext.operation.outcome"] == "failure"
+        span
+        for span in spans
+        if span.attributes is not None and span.attributes["powercontext.operation.outcome"] == "failure"
     )
     assert failed_span.status.status_code is StatusCode.ERROR
 
@@ -272,6 +274,37 @@ def test_background_stage_starts_a_fresh_trace_outside_an_ambient_span() -> None
     assert attributes["powercontext.operation.unit"] == "background"
     assert attributes["powercontext.operation.outcome"] == "noop"
     assert attributes["powercontext.background.source_count"] == 0
+
+
+def test_background_isolates_child_spans_when_root_start_fails(monkeypatch) -> None:
+    tracing, exporter = _tracing()
+    ambient = tracing.start_span("HTTP flush_memory", kind=SpanKind.SERVER, attributes={})
+    original = tracing.tracer.start_span
+    remaining_failures = 1
+
+    def fail_root_once(name: str, *args: object, **kwargs: object):
+        nonlocal remaining_failures
+        if remaining_failures:
+            remaining_failures -= 1
+            raise RuntimeError
+        return original(name, *args, **kwargs)
+
+    monkeypatch.setattr(tracing.tracer, "start_span", fail_root_once)
+
+    with tracing.background(
+        "scheduled.process_source_window",
+        operation="process_source_window",
+        attributes={},
+    ), tracing.stage("memory.flush", attributes={}) as stage:
+        stage.set_outcome("noop")
+    ambient.finish("success")
+
+    spans = {span.name: span for span in exporter.get_finished_spans()}
+    assert "scheduled.process_source_window" not in spans
+    ambient_span = spans["HTTP flush_memory"]
+    flush = spans["memory.flush"]
+    assert flush.parent is None
+    assert flush.context.trace_id != ambient_span.context.trace_id
 
 
 def test_readiness_ignores_tracing_setup_failure(monkeypatch, tmp_path) -> None:

@@ -150,25 +150,35 @@ class ServerTracing:
     ) -> Iterator[_ActiveSpan]:
         """Trace one scheduled activation as an independent trace root."""
 
-        span = self.start_span(
-            name,
-            kind=SpanKind.INTERNAL,
-            context=Context(),
-            attributes={
-                **attributes,
-                "powercontext.operation.name": operation,
-                "powercontext.operation.unit": "background",
-            },
-        )
+        isolation_token: Token[Context] | None = None
+        with suppress(Exception):
+            # Keep an empty context attached even if the root span fails to start, so
+            # child stages cannot join an ambient HTTP/MCP trace.
+            isolation_token = otel_context.attach(Context())
         try:
-            yield span
-        except asyncio.CancelledError as error:
-            span.finish("cancelled", error=error)
-            raise
-        except BaseException as error:
-            span.finish("failure", error=error)
-            raise
-        span.finish(span.outcome or "success")
+            span = self.start_span(
+                name,
+                kind=SpanKind.INTERNAL,
+                context=Context(),
+                attributes={
+                    **attributes,
+                    "powercontext.operation.name": operation,
+                    "powercontext.operation.unit": "background",
+                },
+            )
+            try:
+                yield span
+            except asyncio.CancelledError as error:
+                span.finish("cancelled", error=error)
+                raise
+            except BaseException as error:
+                span.finish("failure", error=error)
+                raise
+            span.finish(span.outcome or "success")
+        finally:
+            if isolation_token is not None:
+                with suppress(Exception):
+                    otel_context.detach(isolation_token)
 
     @contextmanager
     def _suppress_readiness_spans(self) -> Iterator[None]:

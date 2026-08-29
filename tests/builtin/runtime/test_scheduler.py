@@ -111,6 +111,18 @@ class _ScheduledExperience:
         )
 
 
+class _NoopExperience:
+    async def __call__(self, scope_id: str, limit: int) -> ExperienceIncubationResult:
+        del scope_id, limit
+        return ExperienceIncubationResult(
+            previous_cursor=0,
+            high_watermark=0,
+            current_cursor=0,
+            source_count=0,
+            candidate_count=0,
+        )
+
+
 class _FailingExperience:
     async def __call__(self, scope_id: str, limit: int) -> ExperienceIncubationResult:
         del scope_id, limit
@@ -136,7 +148,9 @@ def _runtime(
     triggers: object,
     *,
     scope_ids=_scope_ids,
-    experience_incubator: _ScheduledExperience | _FailingExperience | _BlockingExperience | None = None,
+    experience_incubator: (
+        _ScheduledExperience | _NoopExperience | _FailingExperience | _BlockingExperience | None
+    ) = None,
     tracing: ServerTracing | None = None,
 ) -> BuiltinRuntime:
     return BuiltinRuntime(
@@ -401,6 +415,27 @@ def test_scheduled_experience_records_root_and_incubation_spans() -> None:
     assert incubation.attributes["powercontext.experience.incubation.source_count"] == 1
     assert incubation.attributes["powercontext.experience.incubation.candidate_count"] == 1
     assert "project:private-scheduled-scope" not in _scope_id_leak(exporter.get_finished_spans())
+
+
+def test_scheduled_experience_records_noop_outcome() -> None:
+    tracing, exporter = _tracing()
+
+    async def scenario() -> None:
+        runtime = _runtime(_ScheduledTriggers(), experience_incubator=_NoopExperience(), tracing=tracing)
+        assert runtime.experience_processor is not None
+        await runtime.experience_processor.run()
+
+    asyncio.run(scenario())
+
+    spans = {span.name: span for span in exporter.get_finished_spans()}
+    root = spans["scheduled.incubate_experience_candidates"]
+    incubation = spans["experience.incubation"]
+    assert root.attributes is not None and root.attributes["powercontext.operation.outcome"] == "noop"
+    assert root.attributes["powercontext.background.source_count"] == 0
+    assert root.attributes["powercontext.background.candidate_count"] == 0
+    assert incubation.attributes is not None and incubation.attributes["powercontext.operation.outcome"] == "noop"
+    assert incubation.attributes["powercontext.experience.incubation.source_count"] == 0
+    assert incubation.attributes["powercontext.experience.incubation.candidate_count"] == 0
 
 
 def test_scheduled_experience_records_failure_and_swallows_error() -> None:
