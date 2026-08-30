@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from typing import Any
 
 import httpx
 import pytest
@@ -280,22 +281,22 @@ def test_background_isolates_child_spans_when_root_start_fails(monkeypatch) -> N
     tracing, exporter = _tracing()
     ambient = tracing.start_span("HTTP flush_memory", kind=SpanKind.SERVER, attributes={})
     original = tracing.tracer.start_span
-    remaining_failures = 1
 
-    def fail_root_once(name: str, *args: object, **kwargs: object):
-        nonlocal remaining_failures
-        if remaining_failures:
-            remaining_failures -= 1
+    def fail_scheduled_root(name: str, **kwargs: Any) -> Any:
+        if name == "scheduled.process_source_window":
             raise RuntimeError
-        return original(name, *args, **kwargs)
+        return original(name, **kwargs)
 
-    monkeypatch.setattr(tracing.tracer, "start_span", fail_root_once)
+    monkeypatch.setattr(tracing.tracer, "start_span", fail_scheduled_root)
 
-    with tracing.background(
-        "scheduled.process_source_window",
-        operation="process_source_window",
-        attributes={},
-    ), tracing.stage("memory.flush", attributes={}) as stage:
+    with (
+        tracing.background(
+            "scheduled.process_source_window",
+            operation="process_source_window",
+            attributes={},
+        ),
+        tracing.stage("memory.flush", attributes={}) as stage,
+    ):
         stage.set_outcome("noop")
     ambient.finish("success")
 
