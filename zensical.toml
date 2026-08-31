@@ -47,6 +47,7 @@ nav = [
                 { "Interfaces" = "en/docs/reference/interfaces.md" },
                 { "HTTP API" = "en/docs/reference/http-api.md" },
                 { "Configuration" = "en/docs/reference/configuration.md" },
+                { "HTTP API Reference" = "api/index.html" },
             ] },
         ] },
         { "Development" = [
@@ -130,6 +131,7 @@ nav = [
                 { "接口" = "zh/docs/reference/interfaces.md" },
                 { "HTTP API" = "zh/docs/reference/http-api.md" },
                 { "配置" = "zh/docs/reference/configuration.md" },
+                { "HTTP API 参考" = "api/index.html" },
             ] },
         ] },
         { "开发" = [
