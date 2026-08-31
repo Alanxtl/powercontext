@@ -50,6 +50,7 @@ nav = [
                 { "HTTP API Reference" = "api/index.html" },
             ] },
         ] },
+        { "Benchmarks" = "en/benchmarks/index.md" },
         { "Development" = [
             { "Core Protocol" = "en/development/core-protocol.md" },
             { "Memory Layer" = "en/development/memory-layer.md" },
@@ -134,6 +135,7 @@ nav = [
                 { "HTTP API 参考" = "api/index.html" },
             ] },
         ] },
+        { "Benchmark" = "zh/benchmarks/index.md" },
         { "开发" = [
             { "Core Protocol" = "zh/development/core-protocol.md" },
             { "Memory Layer" = "zh/development/memory-layer.md" },
