@@ -894,6 +894,47 @@ def test_http_error_preserves_structured_error_code(recall_module: ModuleType) -
     assert caught.value.code == "invalid_request"
 
 
+def test_hook_aborts_a_slow_error_response_at_the_shared_deadline(
+    recall_module: ModuleType,
+) -> None:
+    class SlowErrorHandler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            body = b'{"error":{"code":"invalid_request","message":"slow"}}'
+            self.send_response(422)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            for byte in body:
+                try:
+                    self.wfile.write(bytes((byte,)))
+                    self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    return
+                time.sleep(0.02)
+
+        def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
+            pass
+
+    with _serve(SlowErrorHandler) as server_url:
+        started = time.monotonic()
+        settings = recall_module.CodexPluginSettings(
+            request_timeout_seconds=1.0,
+            http_budget_seconds=0.1,
+        )
+        object.__setattr__(settings, "server_url", server_url)
+        with pytest.raises(recall_module._ServerUnavailableError):
+            recall_module._post_json(
+                "/v1/context/prepare",
+                {},
+                settings=settings,
+                deadline=started + 0.1,
+                expected_status=200,
+            )
+        elapsed = time.monotonic() - started
+
+    assert elapsed < 0.5
+
+
 def test_hook_aborts_a_slow_response_at_the_request_deadline(
     recall_module: ModuleType,
 ) -> None:

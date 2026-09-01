@@ -1154,6 +1154,73 @@ def test_missing_prepare_endpoint_remains_a_version_mismatch_diagnostic(provider
     ]
 
 
+@pytest.mark.parametrize(
+    ("event", "path"),
+    [
+        ("context_prepare", "/v1/context/prepare"),
+        ("capture_source", "/v1/sources/content"),
+        ("session_end_flush", "/v1/memory/flush"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("status", "code"),
+    [(404, "not_found"), (409, "conflict"), (422, "invalid_request")],
+)
+def test_automatic_domain_errors_remain_visible_at_their_real_endpoints(
+    provider_and_client,
+    caplog,
+    event,
+    path,
+    status,
+    code,
+):
+    provider, _client = provider_and_client
+    from plugins.powercontext.client import PowerContextHTTPError  # ty: ignore[unresolved-import]
+
+    with caplog.at_level(logging.WARNING, logger="plugins.powercontext.provider"):
+        provider._emit_failure_diagnostic(
+            event,
+            PowerContextHTTPError(status, path=path, code=code),
+        )
+
+    diagnostics = [
+        json.loads(record.message) for record in caplog.records if record.name == "plugins.powercontext.provider"
+    ]
+    assert diagnostics == [
+        {
+            "component": "powercontext.hermes",
+            "event": event,
+            "outcome": "invalid_response",
+            "http_status": status,
+            "error_code": code,
+        }
+    ]
+
+
+def test_coded_prepare_domain_error_is_not_a_version_mismatch(provider_and_client, caplog):
+    provider, _client = provider_and_client
+    from plugins.powercontext.client import PowerContextHTTPError  # ty: ignore[unresolved-import]
+
+    with caplog.at_level(logging.WARNING, logger="plugins.powercontext.provider"):
+        provider._emit_failure_diagnostic(
+            "context_prepare",
+            PowerContextHTTPError(404, path="/v1/context/prepare", code="invalid_request"),
+        )
+
+    diagnostics = [
+        json.loads(record.message) for record in caplog.records if record.name == "plugins.powercontext.provider"
+    ]
+    assert diagnostics == [
+        {
+            "component": "powercontext.hermes",
+            "event": "context_prepare",
+            "outcome": "invalid_response",
+            "http_status": 404,
+            "error_code": "invalid_request",
+        }
+    ]
+
+
 def test_cli_registers_provider_commands(hermes_modules):
     _provider_module, cli_module = hermes_modules
     parser = argparse.ArgumentParser()

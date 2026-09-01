@@ -30,7 +30,37 @@ describe('host-visible diagnostic classification', () => {
       '/v1/memory/entries/get',
       'missing entry',
       404,
+      'memory_not_found',
     ))).toBeUndefined()
+  })
+
+  it('keeps automatic domain failures visible at their actual endpoints', () => {
+    const automaticOperations = [
+      ['context_prepare', '/v1/context/prepare'],
+      ['capture_source', '/v1/sources/content'],
+      ['session_end_flush', '/v1/memory/flush'],
+    ] as const
+    const failures = [
+      [404, 'not_found'],
+      [409, 'conflict'],
+      [422, 'invalid_request'],
+    ] as const
+
+    for (const [event, path] of automaticOperations) {
+      for (const [status, code] of failures) {
+        expect(failureEvent(event, new PowerContextRequestError(
+          path,
+          'domain error',
+          status,
+          code,
+        ))).toEqual({
+          event,
+          outcome: 'invalid_response',
+          http_status: status,
+          error_code: code,
+        })
+      }
+    }
   })
 
   it('does not emit availability diagnostics for direct domain errors', () => {
@@ -39,7 +69,22 @@ describe('host-visible diagnostic classification', () => {
         '/v1/memory/entries/get',
         'domain error',
         status,
+        status === 404 ? 'memory_not_found' : status === 409 ? 'conflict' : 'invalid_request',
       ))).toBeUndefined()
     }
+  })
+
+  it('does not treat a coded compatibility response as a version mismatch', () => {
+    expect(failureEvent('context_prepare', new PowerContextRequestError(
+      '/v1/context/prepare',
+      'invalid request',
+      404,
+      'invalid_request',
+    ))).toEqual({
+      event: 'context_prepare',
+      outcome: 'invalid_response',
+      http_status: 404,
+      error_code: 'invalid_request',
+    })
   })
 })

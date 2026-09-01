@@ -116,23 +116,35 @@ _COMPATIBILITY_OR_AVAILABILITY_PATHS = frozenset({
     "/v1/capabilities",
     "/v1/context/prepare",
 })
+_AUTOMATIC_OPERATION_PATHS = {
+    "context_prepare": frozenset({"/v1/context/prepare"}),
+    "capture_source": frozenset({"/v1/sources/content"}),
+    "pre_compression_capture": frozenset({"/v1/sources/content", "/v1/memory/flush"}),
+    "pre_compaction_flush": frozenset({"/v1/memory/flush"}),
+    "session_end_flush": frozenset({"/v1/memory/flush"}),
+}
 
 
-def _diagnostic_classification(error: PowerContextError) -> tuple[str, int | None] | None:
+def _diagnostic_classification(
+    event: str,
+    error: PowerContextError,
+) -> tuple[str, int | None, str | None] | None:
     if isinstance(error, PowerContextHTTPError):
         status = error.status
         if status == 401:
-            return "authentication_failed", status
-        if status == 404 and error.path in _COMPATIBILITY_OR_AVAILABILITY_PATHS:
-            return "version_mismatch", status
+            return "authentication_failed", status, error.code
+        if status == 404 and error.path in _COMPATIBILITY_OR_AVAILABILITY_PATHS and error.code is None:
+            return "version_mismatch", status, error.code
         if status == 503:
-            return "server_unavailable", status
-        if status in {404, 409, 422}:
+            return "server_unavailable", status, error.code
+        if status in {404, 409, 422} and error.path not in _AUTOMATIC_OPERATION_PATHS.get(
+            event, frozenset()
+        ):
             return None
-        return "invalid_response", status
+        return "invalid_response", status, error.code
     if isinstance(error, PowerContextTransportError):
-        return "server_unavailable", None
-    return "invalid_response", None
+        return "server_unavailable", None, None
+    return "invalid_response", None, None
 
 
 class PowerContextMemoryProvider(MemoryProvider):
@@ -181,10 +193,10 @@ class PowerContextMemoryProvider(MemoryProvider):
         self._diagnostic_last_emitted: dict[str, float] = {}
 
     def _emit_failure_diagnostic(self, event: str, error: PowerContextError) -> None:
-        classification = _diagnostic_classification(error)
+        classification = _diagnostic_classification(event, error)
         if classification is None:
             return
-        outcome, status = classification
+        outcome, status, error_code = classification
 
         key = outcome
         now = time.monotonic()
@@ -199,6 +211,8 @@ class PowerContextMemoryProvider(MemoryProvider):
         }
         if status is not None:
             payload["http_status"] = status
+        if error_code is not None:
+            payload["error_code"] = error_code
         if outcome == "server_unavailable":
             payload["recovery"] = "powercontext doctor"
         logger.warning("%s", json.dumps(payload, separators=(",", ":")))

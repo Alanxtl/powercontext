@@ -1015,33 +1015,32 @@ const COMPATIBILITY_OR_AVAILABILITY_PATHS = new Set([
 	"/v1/capabilities",
 	"/v1/context/prepare"
 ]);
+const AUTOMATIC_OPERATION_PATHS = new Map([
+	["context_prepare", "/v1/context/prepare"],
+	["capture_content_source", "/v1/sources/content"],
+	["flush_memory", "/v1/memory/flush"]
+]);
+function responseDiagnostic(event, outcome, error) {
+	return {
+		event,
+		outcome,
+		http_status: error.statusCode,
+		...error.code ? { error_code: error.code } : {}
+	};
+}
 function isDomainStatus(status) {
 	return status === 404 || status === 409 || status === 422;
 }
 function failureEvent(event, error) {
 	if (error instanceof ServerResponseError) {
-		if (error.statusCode === 401) return {
-			event,
-			outcome: "authentication_failed",
-			http_status: 401
-		};
-		if (error.statusCode === 404 && COMPATIBILITY_OR_AVAILABILITY_PATHS.has(error.path)) return {
-			event,
-			outcome: "version_mismatch",
-			http_status: 404
-		};
+		if (error.statusCode === 401) return responseDiagnostic(event, "authentication_failed", error);
+		if (error.statusCode === 404 && COMPATIBILITY_OR_AVAILABILITY_PATHS.has(error.path) && error.code === void 0) return responseDiagnostic(event, "version_mismatch", error);
 		if (error.statusCode === 503) return {
-			event,
-			outcome: "server_unavailable",
-			http_status: 503,
+			...responseDiagnostic(event, "server_unavailable", error),
 			recovery: "powercontext doctor"
 		};
-		if (isDomainStatus(error.statusCode)) return void 0;
-		return {
-			event,
-			outcome: "invalid_response",
-			http_status: error.statusCode
-		};
+		if (isDomainStatus(error.statusCode) && AUTOMATIC_OPERATION_PATHS.get(event) !== error.path) return void 0;
+		return responseDiagnostic(event, "invalid_response", error);
 	}
 	if (error instanceof TransportError) return {
 		event,
@@ -1133,6 +1132,8 @@ async function captureUserPrompt(input) {
 		});
 		return;
 	}
+	let position;
+	let captureStatus = 202;
 	try {
 		const result = await input.client.request("capture_content_source", {
 			scope_id: input.scopeId,
@@ -1146,17 +1147,24 @@ async function captureUserPrompt(input) {
 				turn_id: input.turnId
 			}
 		}, input.signal);
-		const position = result.kind === "json" ? sourcePosition(result.value) : void 0;
-		if (input.config.flushOnCapture && position !== void 0) await flushThrough(input.client, input.config, input.scopeId, position, input.signal);
-		input.log({
-			event: "capture_content_source",
-			outcome: "ok",
-			status: result.status
-		});
+		position = result.kind === "json" ? sourcePosition(result.value) : void 0;
+		captureStatus = result.status;
 	} catch (error) {
 		const diagnostic = failureEvent("capture_content_source", error);
 		if (diagnostic) input.log(diagnostic);
+		return;
 	}
+	if (input.config.flushOnCapture && position !== void 0) try {
+		await flushThrough(input.client, input.config, input.scopeId, position, input.signal);
+	} catch (error) {
+		const diagnostic = failureEvent("flush_memory", error);
+		if (diagnostic) input.log(diagnostic);
+	}
+	input.log({
+		event: "capture_content_source",
+		outcome: "ok",
+		status: captureStatus
+	});
 }
 
 //#endregion

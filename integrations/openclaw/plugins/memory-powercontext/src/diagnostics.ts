@@ -20,6 +20,7 @@ export interface DiagnosticEvent {
   event: string
   outcome: string
   http_status?: number
+  error_code?: string
   recovery?: string
   [key: string]: unknown
 }
@@ -31,21 +32,44 @@ const COMPATIBILITY_OR_AVAILABILITY_PATHS = new Set([
   '/v1/context/prepare',
 ])
 
+const AUTOMATIC_OPERATION_PATHS = new Map([
+  ['context_prepare', '/v1/context/prepare'],
+  ['capture_source', '/v1/sources/content'],
+  ['pre_compaction_flush', '/v1/memory/flush'],
+  ['session_end_flush', '/v1/memory/flush'],
+])
+
+function responseDiagnostic(event: string, outcome: string, error: PowerContextRequestError): DiagnosticEvent {
+  return {
+    event,
+    outcome,
+    ...(error.status !== undefined ? { http_status: error.status } : {}),
+    ...(error.code ? { error_code: error.code } : {}),
+  }
+}
+
 function isDomainStatus(status: number): boolean {
   return status === 404 || status === 409 || status === 422
 }
 
 export function failureEvent(event: string, error: unknown): DiagnosticEvent | undefined {
   if (error instanceof PowerContextRequestError) {
-    if (error.status === 401) return { event, outcome: 'authentication_failed', http_status: 401 }
-    if (error.status === 404 && COMPATIBILITY_OR_AVAILABILITY_PATHS.has(error.path)) {
-      return { event, outcome: 'version_mismatch', http_status: 404 }
+    if (error.status === 401) return responseDiagnostic(event, 'authentication_failed', error)
+    if (error.status === 404 && COMPATIBILITY_OR_AVAILABILITY_PATHS.has(error.path) && error.code === undefined) {
+      return responseDiagnostic(event, 'version_mismatch', error)
     }
     if (error.status === 503) {
-      return { event, outcome: 'server_unavailable', http_status: 503, recovery: 'powercontext doctor' }
+      return {
+        ...responseDiagnostic(event, 'server_unavailable', error),
+        recovery: 'powercontext doctor',
+      }
     }
-    if (error.status !== undefined && isDomainStatus(error.status)) return undefined
-    if (error.status !== undefined) return { event, outcome: 'invalid_response', http_status: error.status }
+    if (
+      error.status !== undefined
+      && isDomainStatus(error.status)
+      && AUTOMATIC_OPERATION_PATHS.get(event) !== error.path
+    ) return undefined
+    if (error.status !== undefined) return responseDiagnostic(event, 'invalid_response', error)
     return { event, outcome: 'server_unavailable', recovery: 'powercontext doctor' }
   }
   return { event, outcome: 'invalid_response' }

@@ -341,8 +341,10 @@ def _post_json(
             result = json.loads(_read_response(response, deadline=request_deadline))
     except HTTPError as error:
         try:
-            error_body = error.read(_MAX_RESPONSE_BYTES + 1)
-        except (OSError, TimeoutError):
+            error_body = _read_response(error, deadline=request_deadline, chunk_bytes=1)
+        except TimeoutError as timeout:
+            raise _ServerUnavailableError from timeout
+        except OSError:
             error_body = b""
         raise _HttpStatusError(error.code, path, _decode_error_code(error_body)) from error
     except TimeoutError as error:
@@ -363,14 +365,19 @@ def _request_headers(settings: ClaudeCodePluginSettings) -> dict[str, str]:
     return headers
 
 
-def _read_response(response: _Response, *, deadline: float) -> bytes:
+def _read_response(
+    response: _Response,
+    *,
+    deadline: float,
+    chunk_bytes: int = _READ_CHUNK_BYTES,
+) -> bytes:
     """Read one response under a wall-clock deadline and a hard size bound."""
 
     content = bytearray()
     while True:
         _set_response_timeout(response, _remaining_time(deadline))
         remaining_bytes = _MAX_RESPONSE_BYTES + 1 - len(content)
-        chunk = response.read(min(_READ_CHUNK_BYTES, remaining_bytes))
+        chunk = response.read(min(chunk_bytes, remaining_bytes))
         if not chunk:
             return bytes(content)
         content.extend(chunk)

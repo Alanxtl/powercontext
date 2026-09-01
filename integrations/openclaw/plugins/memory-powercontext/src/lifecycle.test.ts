@@ -32,6 +32,8 @@ function createLifecycleHarness() {
   const contextQueries: string[] = [];
   let memoryExtraction = true;
   let contextPrepareError: unknown;
+  let captureError: unknown;
+  let flushError: unknown;
   const config = resolvePowerContextConfig(undefined, {
     endpoint: "http://powercontext.test",
     scopeMode: "project",
@@ -46,9 +48,15 @@ function createLifecycleHarness() {
     async post<T>(path: string, body: Record<string, unknown>): Promise<T> {
       if (path === "/v1/memory/flush") {
         flushScopes.push(String(body.scope_id));
+        if (flushError !== undefined) {
+          throw flushError;
+        }
       }
       if (path === "/v1/sources/content") {
         capturedScopes.push(String(body.scope_id));
+        if (captureError !== undefined) {
+          throw captureError;
+        }
       }
       if (path === "/v1/context/prepare") {
         contextQueries.push(String(body.query));
@@ -94,6 +102,12 @@ function createLifecycleHarness() {
     },
     setContextPrepareError(error: unknown) {
       contextPrepareError = error;
+    },
+    setCaptureError(error: unknown) {
+      captureError = error;
+    },
+    setFlushError(error: unknown) {
+      flushError = error;
     },
     warnings,
   };
@@ -158,6 +172,94 @@ describe("PowerContext lifecycle", () => {
       '{"component":"powercontext.openclaw","event":"context_prepare","outcome":"server_unavailable","recovery":"powercontext doctor"}',
     );
     expect(harness.warnings[0]).not.toContain("do not expose this detail");
+  });
+
+  it("reports a prepare domain failure from the actual endpoint", async () => {
+    const harness = createLifecycleHarness();
+    harness.setContextPrepareError(
+      new PowerContextRequestError(
+        "/v1/context/prepare",
+        "invalid request",
+        422,
+        "invalid_request",
+      ),
+    );
+    const beforePromptBuild = harness.hooks.get("before_prompt_build");
+
+    await beforePromptBuild!(
+      { messages: [{ role: "user", content: "prepare this" }], prompt: "" },
+      {
+        agentId: "main",
+        sessionId: "session-prepare-domain-error",
+        sessionKey: "agent:main:telegram:direct:user-1",
+      },
+    );
+
+    expect(harness.warnings).toEqual([
+      '{"component":"powercontext.openclaw","event":"context_prepare","outcome":"invalid_response","http_status":422,"error_code":"invalid_request"}',
+    ]);
+  });
+
+  it("reports a capture domain failure from the actual endpoint", async () => {
+    const harness = createLifecycleHarness();
+    harness.setCaptureError(
+      new PowerContextRequestError(
+        "/v1/sources/content",
+        "invalid request",
+        422,
+        "invalid_request",
+      ),
+    );
+    const agentEnd = harness.hooks.get("agent_end");
+
+    await agentEnd!(
+      {
+        success: true,
+        messages: [{ role: "user", content: "capture this" }],
+      },
+      {
+        agentId: "main",
+        sessionId: "session-capture-domain-error",
+        sessionKey: "agent:main:telegram:direct:user-1",
+      },
+    );
+
+    expect(harness.warnings).toEqual([
+      '{"component":"powercontext.openclaw","event":"capture_source","outcome":"invalid_response","http_status":422,"error_code":"invalid_request"}',
+    ]);
+  });
+
+  it("reports a flush domain failure from the actual endpoint", async () => {
+    const harness = createLifecycleHarness();
+    harness.setFlushError(
+      new PowerContextRequestError(
+        "/v1/memory/flush",
+        "conflict",
+        409,
+        "conflict",
+      ),
+    );
+    const beforePromptBuild = harness.hooks.get("before_prompt_build");
+    const sessionEnd = harness.hooks.get("session_end");
+    const context = {
+      agentId: "main",
+      sessionId: "session-flush-domain-error",
+      sessionKey: "agent:main:telegram:direct:user-1",
+      activeProjectKeys: ["/workspace/project"],
+    };
+
+    await beforePromptBuild!(
+      { messages: [{ role: "user", content: "remember this" }], prompt: "" },
+      context,
+    );
+    await sessionEnd!(
+      { sessionId: context.sessionId, messageCount: 1 },
+      context,
+    );
+
+    expect(harness.warnings).toEqual([
+      '{"component":"powercontext.openclaw","event":"session_end_flush","outcome":"invalid_response","http_status":409,"error_code":"conflict","failed_scopes":1,"total_scopes":1}',
+    ]);
   });
 
   it("bounds context queries by UTF-8 bytes", async () => {

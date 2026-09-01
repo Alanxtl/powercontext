@@ -108,6 +108,106 @@ describe('PowerContext Pi extension', () => {
     )
   })
 
+  it('reports a prepare domain failure from the actual endpoint', async () => {
+    vi.stubEnv('POWERCONTEXT_PI_SCOPE_ID', 'project:demo')
+    vi.stubEnv('POWERCONTEXT_PI_CAPTURE_PROMPTS', 'false')
+    const fetch = vi.fn(async (url: string) => {
+      expect(url).toBe('http://127.0.0.1:8000/v1/context/prepare')
+      return new Response(JSON.stringify({ error: { code: 'invalid_request' } }), { status: 422 })
+    })
+    vi.stubGlobal('fetch', fetch)
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const beforeAgentStart = installExtension().get('before_agent_start')
+
+    await expect(beforeAgentStart?.({
+      prompt: 'continue implementation',
+      systemPrompt: 'Base instructions',
+    }, {
+      cwd: '/workspace/repo',
+      sessionManager: {
+        getSessionId: () => 'session-42',
+        getBranch: () => [],
+      },
+    })).resolves.toBeUndefined()
+
+    expect(warning).toHaveBeenCalledWith(
+      '{"component":"powercontext.pi","event":"context_prepare","outcome":"invalid_response","http_status":422,"error_code":"invalid_request"}',
+    )
+  })
+
+  it('reports a capture domain failure from the actual endpoint', async () => {
+    vi.stubEnv('POWERCONTEXT_PI_SCOPE_ID', 'project:demo')
+    const fetch = vi.fn(async (url: string) => {
+      if (url === 'http://127.0.0.1:8000/v1/context/prepare') {
+        return new Response(JSON.stringify({
+          schema: 'powercontext.prepared-context.v1',
+          status: 'empty',
+          content: null,
+          content_bytes: 0,
+        }))
+      }
+      expect(url).toBe('http://127.0.0.1:8000/v1/sources/content')
+      return new Response(JSON.stringify({ error: { code: 'invalid_request' } }), { status: 422 })
+    })
+    vi.stubGlobal('fetch', fetch)
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const beforeAgentStart = installExtension().get('before_agent_start')
+
+    await expect(beforeAgentStart?.({
+      prompt: 'continue implementation',
+      systemPrompt: 'Base instructions',
+    }, {
+      cwd: '/workspace/repo',
+      sessionManager: {
+        getSessionId: () => 'session-42',
+        getBranch: () => [],
+      },
+    })).resolves.toBeUndefined()
+
+    expect(warning).toHaveBeenCalledWith(
+      '{"component":"powercontext.pi","event":"capture_source","outcome":"invalid_response","http_status":422,"error_code":"invalid_request"}',
+    )
+  })
+
+  it('reports a flush domain failure from the actual endpoint', async () => {
+    vi.stubEnv('POWERCONTEXT_PI_SCOPE_ID', 'project:demo')
+    vi.stubEnv('POWERCONTEXT_PI_FLUSH_ON_CAPTURE', 'true')
+    vi.stubEnv('POWERCONTEXT_PI_FLUSH_MAX_CALLS', '1')
+    const fetch = vi.fn(async (url: string) => {
+      if (url === 'http://127.0.0.1:8000/v1/context/prepare') {
+        return new Response(JSON.stringify({
+          schema: 'powercontext.prepared-context.v1',
+          status: 'empty',
+          content: null,
+          content_bytes: 0,
+        }))
+      }
+      if (url === 'http://127.0.0.1:8000/v1/sources/content') {
+        return new Response(JSON.stringify({ status: 'accepted', position: 1 }), { status: 202 })
+      }
+      expect(url).toBe('http://127.0.0.1:8000/v1/memory/flush')
+      return new Response(JSON.stringify({ error: { code: 'conflict' } }), { status: 409 })
+    })
+    vi.stubGlobal('fetch', fetch)
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const beforeAgentStart = installExtension().get('before_agent_start')
+
+    await expect(beforeAgentStart?.({
+      prompt: 'continue implementation',
+      systemPrompt: 'Base instructions',
+    }, {
+      cwd: '/workspace/repo',
+      sessionManager: {
+        getSessionId: () => 'session-42',
+        getBranch: () => [],
+      },
+    })).resolves.toBeUndefined()
+
+    expect(warning).toHaveBeenCalledWith(
+      '{"component":"powercontext.pi","event":"flush_memory","outcome":"invalid_response","http_status":409,"error_code":"conflict"}',
+    )
+  })
+
   it('keeps recalled context when independent prompt capture fails', async () => {
     vi.stubEnv('POWERCONTEXT_PI_SCOPE_ID', 'project:demo')
     const fetch = vi.fn(async (url: string, _init?: RequestInit) => {
