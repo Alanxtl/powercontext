@@ -59,15 +59,16 @@ _REQUEST_HEADERS = {
 _FAILURE_OUTCOMES = frozenset({"authentication_failed", "version_mismatch", "server_unavailable", "invalid_response"})
 
 
-class _Response(Protocol):
-    fp: object
+class _ReadableResponse(Protocol):
+    def read(self, n: int = -1) -> bytes: ...
+
+
+class _Response(_ReadableResponse, Protocol):
     status: int
 
     def __enter__(self) -> _Response: ...
 
     def __exit__(self, *args: object) -> object: ...
-
-    def read(self, amount: int = -1) -> bytes: ...
 
 
 class _RejectRedirects(HTTPRedirectHandler):
@@ -331,6 +332,7 @@ def _post_json(
         headers=_request_headers(settings),
         method="POST",
     )
+    request_deadline = deadline
     try:
         request_timeout = min(settings.request_timeout_seconds, _remaining_time(deadline))
         request_deadline = min(deadline, monotonic() + request_timeout)
@@ -366,7 +368,7 @@ def _request_headers(settings: ClaudeCodePluginSettings) -> dict[str, str]:
 
 
 def _read_response(
-    response: _Response,
+    response: _ReadableResponse,
     *,
     deadline: float,
     chunk_bytes: int = _READ_CHUNK_BYTES,
@@ -392,10 +394,10 @@ def _remaining_time(deadline: float) -> float:
     return remaining
 
 
-def _set_response_timeout(response: _Response, timeout: float) -> None:
+def _set_response_timeout(response: object, timeout: float) -> None:
     """Tighten urllib's socket timeout before each bounded read."""
 
-    raw = getattr(response.fp, "raw", None)
+    raw = getattr(getattr(response, "fp", None), "raw", None)
     sock = getattr(raw, "_sock", None)
     settimeout = getattr(sock, "settimeout", None)
     if settimeout is not None:

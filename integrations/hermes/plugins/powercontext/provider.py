@@ -137,9 +137,7 @@ def _diagnostic_classification(
             return "version_mismatch", status, error.code
         if status == 503:
             return "server_unavailable", status, error.code
-        if status in {404, 409, 422} and error.path not in _AUTOMATIC_OPERATION_PATHS.get(
-            event, frozenset()
-        ):
+        if status in {404, 409, 422} and error.path not in _AUTOMATIC_OPERATION_PATHS.get(event, frozenset()):
             return None
         return "invalid_response", status, error.code
     if isinstance(error, PowerContextTransportError):
