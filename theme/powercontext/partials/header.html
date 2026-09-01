@@ -34,7 +34,7 @@
     </a>
     <div class="pc-header-nav" aria-label="{{ '主导航' if is_zh else 'Primary navigation' }}">
       <a href="{{ ('zh/docs/' if is_zh else 'en/docs/') | url }}"{% if docs_active %} aria-current="page"{% endif %}>{{ "文档" if is_zh else "Docs" }}</a>
-      <a href="{{ ('zh/benchmarks/' if is_zh else 'en/benchmarks/') | url }}"{% if benchmarks_active %} aria-current="page"{% endif %}>{{ "Benchmark" if is_zh else "Benchmarks" }}</a>
+      <a href="{{ ('zh/benchmarks/' if is_zh else 'en/benchmarks/') | url }}"{% if benchmarks_active %} aria-current="page"{% endif %}>{{ "评测" if is_zh else "Benchmarks" }}</a>
       <a href="{{ ('zh/blog/' if is_zh else 'en/blog/') | url }}"{% if blog_active %} aria-current="page"{% endif %}>{{ "博客" if is_zh else "Blog" }}</a>
       <a href="{{ ('zh/changelog/' if is_zh else 'en/changelog/') | url }}"{% if changelog_active %} aria-current="page"{% endif %}>{{ "更新日志" if is_zh else "Changelog" }}</a>
       <a href="{{ ('zh/rfcs/' if is_zh else 'en/rfcs/') | url }}"{% if records_active %} aria-current="page"{% endif %}>{{ "RFC 与会议纪要" if is_zh else "RFCs & Meetings" }}</a>

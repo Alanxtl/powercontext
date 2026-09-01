@@ -122,6 +122,64 @@
     });
   }
 
+  function activateLeaderboard(leaderboards, id, focusTab) {
+    const tabs = Array.from(leaderboards.querySelectorAll("[data-leaderboard-target]"));
+    const panels = Array.from(leaderboards.querySelectorAll("[data-leaderboard-panel]"));
+    const activeTab = tabs.find((tab) => tab.dataset.leaderboardTarget === id);
+    const activePanel = panels.find((panel) => panel.dataset.leaderboardPanel === id);
+
+    if (!activeTab || !activePanel) {
+      return;
+    }
+
+    tabs.forEach((tab) => {
+      const selected = tab === activeTab;
+      tab.setAttribute("aria-selected", selected ? "true" : "false");
+      tab.tabIndex = selected ? 0 : -1;
+    });
+    panels.forEach((panel) => {
+      panel.classList.remove("is-active", "is-playing");
+      panel.hidden = panel !== activePanel;
+    });
+
+    activePanel.classList.add("is-active");
+    window.requestAnimationFrame(() => activePanel.classList.add("is-playing"));
+    if (focusTab) {
+      activeTab.focus();
+    }
+  }
+
+  function enhanceLeaderboards(leaderboards) {
+    leaderboards.classList.add("is-enhanced");
+    const tabs = Array.from(leaderboards.querySelectorAll("[data-leaderboard-target]"));
+    const initial = tabs.find((tab) => tab.getAttribute("aria-selected") === "true") || tabs[0];
+    if (!initial) {
+      return;
+    }
+
+    activateLeaderboard(leaderboards, initial.dataset.leaderboardTarget, false);
+
+    tabs.forEach((tab, index) => {
+      tab.addEventListener("click", () => activateLeaderboard(leaderboards, tab.dataset.leaderboardTarget, false));
+      tab.addEventListener("keydown", (event) => {
+        let nextIndex = index;
+        if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+          nextIndex = (index + 1) % tabs.length;
+        } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+          nextIndex = (index - 1 + tabs.length) % tabs.length;
+        } else if (event.key === "Home") {
+          nextIndex = 0;
+        } else if (event.key === "End") {
+          nextIndex = tabs.length - 1;
+        } else {
+          return;
+        }
+        event.preventDefault();
+        activateLeaderboard(leaderboards, tabs[nextIndex].dataset.leaderboardTarget, true);
+      });
+    });
+  }
+
   function initBenchmark() {
     const page = document.querySelector(".pc-benchmark");
     if (!page || initialized.has(page)) {
@@ -130,6 +188,7 @@
     initialized.add(page);
 
     page.querySelectorAll("[data-metric-comparison]").forEach(enhanceMetricComparison);
+    page.querySelectorAll("[data-leaderboards]").forEach(enhanceLeaderboards);
     const revealTargets = Array.from(page.querySelectorAll("[data-benchmark-reveal]"));
 
     if (prefersReducedMotion() || !("IntersectionObserver" in window)) {

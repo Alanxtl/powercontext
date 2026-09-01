@@ -139,7 +139,7 @@ nav = [
                 { "HTTP API 参考" = "api/index.html" },
             ] },
         ] },
-        { "Benchmark" = "zh/benchmarks/index.md" },
+        { "评估测试" = "zh/benchmarks/index.md" },
         { "开发" = [
             { "Core Protocol" = "zh/development/core-protocol.md" },
             { "Memory Layer" = "zh/development/memory-layer.md" },
