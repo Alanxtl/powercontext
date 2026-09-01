@@ -156,6 +156,7 @@ celerybeat.pid
 
 # Environments
 .env
+.env.bak-*
 .envrc
 .powercontext/
 .powercontext-e2e/
@@ -175,6 +176,7 @@ venv.bak/
 
 # mkdocs/zensical documentation
 /site
+/docs/api/openapi.yaml
 e2e/bub/results/
 
 # mypy

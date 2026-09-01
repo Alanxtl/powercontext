@@ -60,7 +60,11 @@ class PydanticAIConfigurationError(InferenceConfigurationError):
             "provider-rejected": "provider rejected the configured Pydantic AI request",
             "pydantic-rejected": "Pydantic AI rejected the configured request",
         }
-        super().__init__(messages.get(code, f"Pydantic AI adapter is not configured correctly: {code}"))
+        message = messages.get(code, f"Pydantic AI adapter is not configured correctly: {code}")
+        if code == "provider-rejected" and detail is not None:
+            # The detail is structured (e.g. "HTTP 400"), never the raw provider response body.
+            message = f"{message} ({detail})"
+        super().__init__(message)
 
 
 try:
@@ -77,7 +81,7 @@ try:
     )
     from pydantic_ai.messages import ModelRequest, UserPromptPart
     from pydantic_ai.models import Model, ModelRequestParameters
-    from pydantic_ai.settings import ModelSettings
+    from pydantic_ai.settings import ModelSettings, merge_model_settings
     from pydantic_ai.usage import RunUsage, UsageLimits
     from pydantic_core import PydanticSerializationError
 except ModuleNotFoundError as error:  # pragma: no cover - exercised in a dependency-free environment
@@ -268,6 +272,7 @@ async def probe_pydantic_ai_model(
     /,
     *,
     timeout_seconds: float,
+    model_settings: ModelSettings | None = None,
 ) -> None:
     """Send one minimal text request through an assembled generation model."""
 
@@ -277,7 +282,7 @@ async def probe_pydantic_ai_model(
         await asyncio.wait_for(
             model.request(
                 [ModelRequest(parts=[UserPromptPart("Reply with one token.")])],
-                ModelSettings(max_tokens=1),
+                merge_model_settings(model_settings, ModelSettings(max_tokens=1)),
                 ModelRequestParameters(),
             ),
             timeout=timeout_seconds,
@@ -316,7 +321,7 @@ def _map_error(
             return InferenceTimeoutError(operation, timeout_seconds)
         if error.status_code in {409, 425, 429} or error.status_code >= 500:
             return InferenceUnavailableError(operation)
-        return PydanticAIConfigurationError("provider-rejected")
+        return PydanticAIConfigurationError("provider-rejected", detail=f"HTTP {error.status_code}")
     if isinstance(error, (ModelAPIError, ConcurrencyLimitExceeded, OSError)):
         return InferenceUnavailableError(operation)
     if isinstance(error, (UnexpectedModelBehavior, UsageLimitExceeded, ValidationError)):
