@@ -33,7 +33,14 @@ uv tool install "powercontext[cli,server]==0.1.0"
 # uv tool install "powercontext[cli,server] @ git+https://github.com/oceanbase/powercontext.git@master"
 ```
 
-Start a local Server in its own terminal:
+For a persistent personal Server that survives terminal closure and starts again after login, install the native current-user service:
+
+```bash
+powercontext service install # Uninstall with `powercontext service uninstall`
+powercontext service status
+```
+
+If you want to use it foreground in a terminal, you can run:
 
 ```bash
 powercontext server run

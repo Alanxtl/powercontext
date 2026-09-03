@@ -176,9 +176,9 @@ class WindowsTaskSchedulerAdapter:
 
         registration = ET.SubElement(root, _tag("RegistrationInfo"))
         ET.SubElement(registration, _tag("Author")).text = "PowerContext"
-        ET.SubElement(registration, _tag("Description")).text = (
-            f"{_DESCRIPTION}\n{_METADATA_PREFIX}{encode_metadata(definition)}"
-        )
+        ET.SubElement(
+            registration, _tag("Description")
+        ).text = f"{_DESCRIPTION}\n{_METADATA_PREFIX}{encode_metadata(definition)}"
         ET.SubElement(registration, _tag("URI")).text = self.identifier
 
         if definition.start_on_login:
@@ -413,7 +413,11 @@ def _definition_from_task(root: ET.Element) -> ServiceDefinition:
     registration = _child(root, "RegistrationInfo")
     description = _text(registration, "Description")
     metadata = next(
-        (line.strip()[len(_METADATA_PREFIX) :] for line in description.splitlines() if line.strip().startswith(_METADATA_PREFIX)),
+        (
+            line.strip()[len(_METADATA_PREFIX) :]
+            for line in description.splitlines()
+            if line.strip().startswith(_METADATA_PREFIX)
+        ),
         None,
     )
     if _DESCRIPTION not in description or metadata is None:
@@ -468,7 +472,9 @@ def _same_path(actual: str, expected: str) -> bool:
 
 
 def _is_service_account(account: str, sid: str) -> bool:
-    return sid.casefold() in _BUILTIN_SERVICE_SIDS or account.rsplit("\\", 1)[-1].casefold() in _BUILTIN_SERVICE_ACCOUNTS
+    return (
+        sid.casefold() in _BUILTIN_SERVICE_SIDS or account.rsplit("\\", 1)[-1].casefold() in _BUILTIN_SERVICE_ACCOUNTS
+    )
 
 
 def _current_user_identity() -> tuple[str, str]:
