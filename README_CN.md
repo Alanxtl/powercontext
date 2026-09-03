@@ -21,7 +21,7 @@ PowerContext 是 [PowerMem](https://www.powermem.ai/) 的升级版本，也是�
 
 ## 快速开始
 
-你需要 macOS 或 Linux、Python 3.11 或更高版本，以及 [`uv`](https://docs.astral.sh/uv/)。先选择入口：
+你需要 macOS、Linux 或 Windows、Python 3.11 或更高版本，以及 [`uv`](https://docs.astral.sh/uv/)。先选择入口：
 
 - 已经有自己的 AI 应用，不使用 Agent Host：跟着 [HTTP API 生命周期教程](docs/zh/docs/tutorials/api-quickstart.md)，
   通过 HTTP 跑通第一个 Source、Memory、PreparedContext、Experience、Skill 和 Review 闭环；
@@ -63,8 +63,10 @@ powercontext service install
 powercontext service status
 ```
 
-Linux 使用 `systemd --user`，macOS 使用当前用户 LaunchAgent，均不需要管理员权限。非默认配置应先生成并保护环境文件，
-再执行 `powercontext service install --env-file <path>`。
+Linux 使用 `systemd --user`，macOS 使用当前用户 LaunchAgent，Windows 使用当前用户的 Task Scheduler task。
+
+非默认配置应先生成并保护环境文件，再执行 `powercontext service install --env-file <path>`。
+修改配置后需要重新执行 `service install`。
 
 交互式排障时仍可使用原有前台命令：
 

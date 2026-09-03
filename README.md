@@ -22,7 +22,7 @@ collaboration. It turns shared work into project context that can be understood,
 
 ## Quick start
 
-You need macOS or Linux, Python 3.11 or newer, and [`uv`](https://docs.astral.sh/uv/). Choose your entry:
+You need macOS, Linux, or Windows, Python 3.11 or newer, and [`uv`](https://docs.astral.sh/uv/). Choose your entry:
 
 - already have an AI application and do not use an Agent Host: follow the
   [HTTP API lifecycle tutorial](docs/en/docs/tutorials/api-quickstart.md) to complete the first Source, Memory,
@@ -67,11 +67,9 @@ powercontext service install
 powercontext service status
 ```
 
-Linux uses `systemd --user`; macOS uses a per-user LaunchAgent. Neither path needs administrator privileges. To use a
-non-default configuration, generate and protect an environment file, then pass it explicitly with
-`powercontext service install --env-file <path>`.
-The service requires that file to be owned by the current user with no group or other permissions, and an intentional
-change must be reconciled by running `service install` again.
+Linux uses `systemd --user`, macOS uses a per-user LaunchAgent, and Windows uses a current-user Task Scheduler task.
+
+To use a non-default configuration, generate and protect an environment file, then pass it explicitly with `powercontext service install --env-file <path>`, and an intentional change must be reconciled by running `service install` again.
 
 For interactive troubleshooting, the existing foreground command remains available:
 

@@ -17,7 +17,9 @@
 from __future__ import annotations
 
 import os
+import re
 import stat
+import subprocess
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -94,6 +96,9 @@ def environment_identity_is_current(identity: EnvironmentFileIdentity) -> bool:
 def _validate_protection(path: Path, status: os.stat_result) -> None:
     if not stat.S_ISREG(status.st_mode):
         raise ProtectedEnvironmentFileError(f"--env-file must be a regular file: {path}")  # noqa: TRY003
+    if os.name == "nt":
+        _validate_windows_protection(path)
+        return
     if status.st_uid != os.getuid():
         raise ProtectedEnvironmentFileError(  # noqa: TRY003
             f"--env-file must be owned by the current user: {path}"
@@ -102,6 +107,91 @@ def _validate_protection(path: Path, status: os.stat_result) -> None:
         raise ProtectedEnvironmentFileError(  # noqa: TRY003
             f"--env-file must be accessible only by its owner; run `chmod 600 {path}`"
         )
+
+
+def _validate_windows_protection(path: Path) -> None:
+    """Require a Windows ACL limited to the interactive user and trusted OS admins."""
+
+    account, sid = _windows_user_identity()
+    try:
+        result = subprocess.run(  # noqa: S603
+            ["icacls.exe", str(path)],  # noqa: S607
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise ProtectedEnvironmentFileError(f"cannot inspect the --env-file ACL: {error}") from error  # noqa: TRY003
+    if result.returncode != 0:
+        raise ProtectedEnvironmentFileError(  # noqa: TRY003
+            f"cannot inspect the --env-file ACL: {' '.join(result.stderr.strip().splitlines())[:300]}"
+        )
+
+    allowed = {
+        account.casefold(),
+        sid.casefold(),
+        "nt authority\\system",
+        "builtin\\administrators",
+        "owner rights",
+    }
+    principals: set[str] = set()
+    for line in result.stdout.splitlines():
+        entry = line.strip()
+        match = re.search(r"(?P<rights>(?:\([^)]+\))+)$", entry)
+        if match is None:
+            continue
+        prefix = entry[: match.start()].casefold()
+        sid_match = re.search(r"s-1(?:-\d+)+", prefix, re.IGNORECASE)
+        if sid_match is not None:
+            principal = sid_match.group(0).casefold()
+        else:
+            principal = next(
+                (
+                    candidate
+                    for candidate in (
+                        account.casefold(),
+                        "nt authority\\system",
+                        "builtin\\administrators",
+                        "owner rights",
+                    )
+                    if candidate in prefix
+                ),
+                "<unknown>",
+            )
+        principals.add(principal)
+        if principal not in allowed:
+            raise ProtectedEnvironmentFileError(  # noqa: TRY003
+                "--env-file ACL grants access to an unexpected account; restrict it to the current user, "
+                f"SYSTEM, and Administrators: {path}"
+            )
+    if not principals.intersection({account.casefold(), sid.casefold(), "owner rights"}):
+        raise ProtectedEnvironmentFileError(  # noqa: TRY003
+            f"--env-file ACL does not grant the current user access: {path}"
+        )
+
+
+def _windows_user_identity() -> tuple[str, str]:
+    try:
+        result = subprocess.run(
+            ["whoami.exe", "/user", "/fo", "csv", "/nh"],  # noqa: S607
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise ProtectedEnvironmentFileError(f"cannot determine the current Windows user: {error}") from error  # noqa: TRY003
+    if result.returncode != 0:
+        raise ProtectedEnvironmentFileError(  # noqa: TRY003
+            f"cannot determine the current Windows user: {' '.join(result.stderr.strip().splitlines())[:300]}"
+        )
+    for line in result.stdout.splitlines():
+        fields = [field.strip().strip('"') for field in line.split(",")]
+        sid = next((field for field in reversed(fields) if field.upper().startswith("S-1-")), None)
+        if sid is not None and fields:
+            return fields[0], sid
+    raise ProtectedEnvironmentFileError("cannot determine the current Windows user SID")  # noqa: TRY003
 
 
 def _read_utf8(descriptor: int, path: Path) -> str:

@@ -23,7 +23,7 @@ PowerContext は [PowerMem](https://www.powermem.ai/) のアップグレード�
 
 ## クイックスタート
 
-macOS または Linux、Python 3.11 以降、[`uv`](https://docs.astral.sh/uv/)、および少なくとも 1 つの対応 Agent Host が必要です。
+macOS、Linux、または Windows、Python 3.11 以降、[`uv`](https://docs.astral.sh/uv/)、および少なくとも 1 つの対応 Agent Host が必要です。
 
 ### 1. PowerContext とインテグレーションをインストールする
 
@@ -59,8 +59,13 @@ powercontext service install
 powercontext service status
 ```
 
-Linux では `systemd --user`、macOS ではユーザー LaunchAgent を使用し、管理者権限は不要です。対話的なトラブル
-シューティングでは、既存のフォアグラウンドコマンドも引き続き使用できます。
+Linux では `systemd --user`、macOS ではユーザー LaunchAgent、Windows では現在のユーザー用 Task Scheduler task を
+使用し、管理者権限は不要です。Windows Service はインストールしません。対話的なトラブルシューティングでは、既存の
+フォアグラウンドコマンドも引き続き使用できます。Windows のサービス出力は PowerContext データディレクトリの
+`logs/` に保存されます。
+
+既定以外の設定を使用する場合は、保護した環境ファイルを生成し、`powercontext service install --env-file <path>`
+を実行してください。設定を変更した場合は、`service install` をもう一度実行します。
 
 ```bash
 powercontext server run
