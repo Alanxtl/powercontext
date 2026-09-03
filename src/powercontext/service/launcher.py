@@ -62,6 +62,7 @@ def main(arguments: list[str] | None = None) -> int:
     parser.add_argument("--env-file-modified-ns", type=int)
     parser.add_argument("--env-file-owner-uid", type=int)
     parser.add_argument("--env-file-mode", type=int)
+    parser.add_argument("--env-file-owner-sid")
     parser.add_argument("--stdout", type=Path)
     parser.add_argument("--stderr", type=Path)
     options = parser.parse_args(arguments)
@@ -109,8 +110,9 @@ def _environment_identity(options: argparse.Namespace) -> EnvironmentFileIdentit
         "modified_ns": options.env_file_modified_ns,
         "owner_uid": options.env_file_owner_uid,
         "mode": options.env_file_mode,
+        "owner_sid": options.env_file_owner_sid,
     }
-    if any(value is None for value in fields.values()):
+    if any(value is None for name, value in fields.items() if name != "owner_sid"):
         raise ProtectedEnvironmentFileError("the installed --env-file identity is incomplete")  # noqa: TRY003
     return EnvironmentFileIdentity(path=str(options.env_file), **fields)
 

@@ -167,6 +167,10 @@ powercontext service status
 管理员安装模式。它们从本地 `ServerSettings` 推导 endpoint；根命令的 Client `--server-url` 选项和
 `ClientSettings.server_url` 都不会选择 service target。
 
+在 Windows 上，如果没有显式提供 `--start-on-login` 或 `--no-start-on-login`，Install 会询问是否启用当前用户
+登录触发器，直接按 Enter 的默认选择是不启用。提供任一显式选项后不会再次询问；Linux 和 macOS 不提供关闭
+其原生用户服务正常启动行为的选项。
+
 ### Install
 
 Install 执行以下步骤：
@@ -263,7 +267,8 @@ version，使 status 和 uninstall 在兼容的 package rename 后仍能区分 P
 
 ## Configuration and credentials
 
-服务安装器记录 executable、必需参数和不敏感的 service metadata。它不会把调用者的完整 environment、shell profile、
+服务安装器记录 executable、必需参数和不敏感的 service metadata。Windows 环境文件的 metadata 还包含当前用户的
+owner SID，launcher 每次启动都会重新校验该 SID。它不会把调用者的完整 environment、shell profile、
 API key、bearer token 或 provider credential 复制进原生注册产物。
 
 因此，初始个人服务模式依赖原生当前用户服务环境中可获得的配置。`powercontext service status` 和

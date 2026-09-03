@@ -71,6 +71,11 @@ def _secure_windows_file(path: Path) -> None:
 
 
 def _definition(tmp_path: Path, environment: Path) -> ServiceDefinition:
+    identity = (
+        load_protected_environment_file(environment).identity
+        if os.name == "nt"
+        else EnvironmentFileIdentity.from_path(environment)
+    )
     return ServiceDefinition(
         ownership=OWNERSHIP_MARKER,
         definition_version=DEFINITION_VERSION,
@@ -78,7 +83,7 @@ def _definition(tmp_path: Path, environment: Path) -> ServiceDefinition:
         python_executable=os.path.abspath(sys.executable),
         endpoint="http://127.0.0.1:8123",
         data_dir=str(tmp_path / "data"),
-        env_file=EnvironmentFileIdentity.from_path(environment),
+        env_file=identity,
     )
 
 
@@ -92,9 +97,11 @@ def test_secure_env_loader_accepts_owned_0600_regular_file(tmp_path: Path) -> No
     if os.name == "nt":
         assert loaded.identity.owner_uid == 0
         assert loaded.identity.mode == 0o666
+        assert loaded.identity.owner_sid is not None
     else:
         assert loaded.identity.owner_uid == os.getuid()
         assert loaded.identity.mode == 0o600
+        assert loaded.identity.owner_sid is None
 
 
 def test_secure_env_loader_rejects_group_readable_file(tmp_path: Path) -> None:
@@ -138,10 +145,23 @@ def test_secure_env_loader_rejects_owner_mismatch(tmp_path: Path, monkeypatch: p
         load_protected_environment_file(environment)
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows uses ACL owner SIDs rather than POSIX user ids")
+def test_secure_env_loader_rejects_windows_owner_sid_mismatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment = _environment_file(tmp_path)
+    monkeypatch.setattr(service_environment, "_windows_file_owner_sid", lambda _path: "S-1-5-21-foreign")
+
+    with pytest.raises(ProtectedEnvironmentFileError, match="owned by the current user"):
+        load_protected_environment_file(environment)
+
+
 @pytest.mark.parametrize("mutation", ["content", "mode"])
 def test_secure_env_loader_rejects_recorded_identity_drift(tmp_path: Path, mutation: str) -> None:
     environment = _environment_file(tmp_path)
-    identity = EnvironmentFileIdentity.from_path(environment)
+    identity = _definition(tmp_path, environment).env_file
+    assert identity is not None
     if mutation == "content":
         environment.write_text("POWERCONTEXT_SERVER_HTTP_PORT=9000\n", encoding="utf-8")
     else:

@@ -43,11 +43,11 @@ from powercontext.service.adapters.systemd import SystemdUserAdapter
 from powercontext.service.adapters.windows import WindowsTaskSchedulerAdapter
 from powercontext.service.cli import app as service_app
 from powercontext.service.controller import ServiceController
+from powercontext.service.environment import load_protected_environment_file
 from powercontext.service.model import (
     DEFINITION_VERSION,
     OWNERSHIP_MARKER,
     DefinitionState,
-    EnvironmentFileIdentity,
     LivenessState,
     ManagerOwnershipState,
     ManagerRegistration,
@@ -833,26 +833,66 @@ def test_windows_loaded_registration_requires_owned_task_shape(
     assert "hidden-window policy" in registration.detail
 
 
-@pytest.mark.parametrize(
-    ("output", "expected"),
-    [
-        ("Status: Running\nLast Result: 0\n", ManagerState.ACTIVE),
-        ("Status: Ready\nLast Result: 0x41303\n", ManagerState.INACTIVE),
-        ("Status: Ready\nLast Result: 1\n", ManagerState.FAILED),
-        ("Status: Disabled\n", ManagerState.INACTIVE),
-    ],
-)
-def test_windows_manager_state_uses_task_scheduler_status(
+@pytest.mark.parametrize("extra_parent", ["Actions", "Triggers", "Principals"])
+def test_windows_loaded_registration_rejects_extra_task_elements(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    output: str,
+    extra_parent: str,
+) -> None:
+    adapter = WindowsTaskSchedulerAdapter(
+        config_home=tmp_path,
+        identifier=r"\PowerContext Test",
+        user_account=r"CONTOSO\alice",
+        user_sid="S-1-5-21-100-200-300-1001",
+    )
+    definition = _definition(tmp_path)
+    root = ET.fromstring(adapter.render(definition))  # noqa: S314
+    parent = next(child for child in root if child.tag.endswith(extra_parent))
+    ET.SubElement(
+        parent,
+        parent.tag.rsplit("}", 1)[0]
+        + "}"
+        + {
+            "Actions": "Exec",
+            "Triggers": "TimeTrigger",
+            "Principals": "Principal",
+        }[extra_parent],
+    )
+    output = ET.tostring(root, encoding="utf-16", xml_declaration=True).decode("utf-16")
+    monkeypatch.setattr(
+        adapter,
+        "_run",
+        Mock(return_value=subprocess.CompletedProcess(["schtasks.exe"], 0, output, "")),
+    )
+
+    registration = adapter.loaded_registration()
+
+    assert registration.state is ManagerOwnershipState.FOREIGN
+    assert registration.detail is not None
+    assert "structure" in registration.detail
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        ({"State": "Running", "LastTaskResult": 0}, ManagerState.ACTIVE),
+        ({"State": "Ready", "LastTaskResult": 0x41303}, ManagerState.INACTIVE),
+        ({"State": "Ready", "LastTaskResult": 1}, ManagerState.FAILED),
+        ({"State": "Disabled", "LastTaskResult": 0}, ManagerState.INACTIVE),
+        ({"State": "Running", "LastTaskResult": 0, "状态": "正在运行"}, ManagerState.ACTIVE),
+    ],
+)
+def test_windows_manager_state_uses_locale_independent_task_info(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    payload: dict[str, object],
     expected: ManagerState,
 ) -> None:
     adapter = WindowsTaskSchedulerAdapter(config_home=tmp_path)
     monkeypatch.setattr(
         adapter,
-        "_run",
-        Mock(return_value=subprocess.CompletedProcess(["schtasks.exe"], 0, output, "")),
+        "_run_task_info",
+        Mock(return_value=subprocess.CompletedProcess(["powershell.exe"], 0, json.dumps(payload), "")),
     )
 
     assert adapter.manager_state() is expected
@@ -1413,7 +1453,7 @@ def test_service_launcher_pins_the_recorded_data_directory(
     definition = _definition(
         tmp_path,
         data_dir=str(recorded_data),
-        env_file=EnvironmentFileIdentity.from_path(environment),
+        env_file=load_protected_environment_file(environment).identity,
     )
     exit_code = service_launcher.main(definition.launcher_arguments()[3:])
 

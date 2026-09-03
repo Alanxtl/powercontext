@@ -20,6 +20,9 @@ Linux 使用 `systemd --user`，日志进入 user journal；macOS 使用当前�
 
 `service status` 会返回精确的日志 selector 或路径。
 
+在 Windows 上，如果没有提供 `--start-on-login` 或 `--no-start-on-login`，命令会询问是否在当前用户下次登录时
+自动启动；直接按 Enter 的默认选择是不启用。需要非交互选择时，请提供其中一个选项。
+
 使用显式 Server 配置时，先保护并验证环境文件：
 
 ```bash
@@ -34,7 +37,8 @@ powercontext service install --env-file /path/to/powercontext.env
 icacls $env:USERPROFILE\powercontext.env /inheritance:r /grant:r "$env:USERNAME:(F)" "SYSTEM:(F)" "Administrators:(F)"
 ```
 
-原生定义只记录环境文件的绝对路径和不含内容的文件 identity metadata，不复制 credential 或调用者的 shell environment。
+原生定义只记录环境文件的绝对路径和不含内容的文件 identity metadata；在 Windows 上还记录当前用户的 owner SID，
+launcher 每次启动都会重新校验它。不复制 credential 或调用者的 shell environment。
 升级 PowerContext 或修改环境文件后应重新执行 `service install`。以下命令会删除注册，但保留 Server 数据和日志：
 
 ```bash

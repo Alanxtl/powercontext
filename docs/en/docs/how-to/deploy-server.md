@@ -18,6 +18,10 @@ powercontext service install
 powercontext service status
 ```
 
+On Windows, the command asks whether to enable startup at the current user's next login when neither
+`--start-on-login` nor `--no-start-on-login` is supplied; pressing Enter keeps login auto-start disabled. Use either
+option for a non-interactive choice.
+
 Linux uses `systemd --user` and writes logs to the user journal. macOS uses a per-user LaunchAgent, and Windows uses a current-user Task Scheduler task; both write stdout and stderr below the PowerContext user data directory. `service status` reports the exact log selector or path.
 
 For an explicit Server configuration, protect the environment file before installing:
@@ -34,7 +38,8 @@ On Windows, remove inherited access and grant the file only to the current user,
 icacls $env:USERPROFILE\powercontext.env /inheritance:r /grant:r "$env:USERNAME:(F)" "SYSTEM:(F)" "Administrators:(F)"
 ```
 
-The native definition stores only the absolute file path and non-content file identity metadata; it does not copy
+The native definition stores only the absolute file path and non-content file identity metadata. On Windows this
+includes the current user's owner SID, which is revalidated whenever the launcher starts. It does not copy
 credentials or the caller's shell environment. Re-run `service install` after upgrading PowerContext or changing the
 environment file. Remove the registration without deleting Server data or logs with:
 

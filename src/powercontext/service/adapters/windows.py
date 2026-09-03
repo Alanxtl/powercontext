@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import os
 import shutil
 import subprocess
@@ -95,6 +96,8 @@ class WindowsTaskSchedulerAdapter:
             return SupportState.UNSUPPORTED, "Task Scheduler personal services are available only on Windows"
         if shutil.which("schtasks.exe") is None:
             return SupportState.UNSUPPORTED, "schtasks.exe is not installed or is not on PATH"
+        if shutil.which("powershell.exe") is None:
+            return SupportState.UNSUPPORTED, "powershell.exe is not installed or is not on PATH"
         try:
             account, sid = self._user_identity()
         except ServiceError as error:
@@ -293,20 +296,26 @@ class WindowsTaskSchedulerAdapter:
         self.artifact_path.unlink(missing_ok=True)
 
     def manager_state(self) -> ManagerState:
-        result = self._run("/Query", "/TN", self.identifier, "/FO", "LIST", "/V", "/HRESULT", check=False)
-        if _is_task_not_found(result):
-            return ManagerState.INACTIVE
+        result = self._run_task_info(check=False)
         if result.returncode != 0:
             return ManagerState.UNKNOWN
-        values = _list_output(result.stdout)
-        status = values.get("status", "").casefold()
-        if status in {"running", "正在运行"}:
+        try:
+            values = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            return ManagerState.UNKNOWN
+        if not isinstance(values, dict):
+            return ManagerState.UNKNOWN
+        status = values.get("State")
+        if not isinstance(status, str):
+            return ManagerState.UNKNOWN
+        status = status.casefold()
+        if status == "notfound":
+            return ManagerState.INACTIVE
+        if status == "running":
             return ManagerState.ACTIVE
-        if status in {"ready", "disabled", "queued", "not running", "就绪", "已禁用"}:
-            last_result = _last_result(values.get("last result", ""))
+        if status in {"ready", "disabled", "queued"}:
+            last_result = _last_result(values.get("LastTaskResult"))
             return ManagerState.FAILED if last_result not in {None, 0} else ManagerState.INACTIVE
-        if "could not start" in status or "failed" in status:
-            return ManagerState.FAILED
         return ManagerState.UNKNOWN
 
     def log_location(self, definition: ServiceDefinition | None) -> str | None:
@@ -338,6 +347,9 @@ class WindowsTaskSchedulerAdapter:
         settings = _child(root, "Settings")
         actions = _child(root, "Actions")
         execute = _child(actions, "Exec") if actions is not None else None
+        structure_mismatch = _task_structure_mismatch(root, definition)
+        if structure_mismatch is not None:
+            return structure_mismatch
         if definition.start_on_login:
             logon_matches = logon is not None and (
                 _text(logon, "Enabled").casefold() in {"", "true"}
@@ -397,6 +409,39 @@ class WindowsTaskSchedulerAdapter:
             raise ServiceError(f"schtasks.exe {arguments[0]} failed{detail}")  # noqa: TRY003
         return result
 
+    def _run_task_info(self, *, check: bool = True) -> subprocess.CompletedProcess[str]:
+        task_path, task_name = _task_path_and_name(self.identifier)
+        environment = os.environ.copy()
+        environment["POWERCONTEXT_TASK_PATH"] = task_path
+        environment["POWERCONTEXT_TASK_NAME"] = task_name
+        script = (
+            "$taskPath = $env:POWERCONTEXT_TASK_PATH; "
+            "$taskName = $env:POWERCONTEXT_TASK_NAME; "
+            "$task = Get-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction SilentlyContinue; "
+            "if ($null -eq $task) { "
+            "[pscustomobject]@{ State = 'NotFound'; LastTaskResult = 0 } | ConvertTo-Json -Compress; exit 0 "
+            "}; "
+            "$info = Get-ScheduledTaskInfo -TaskPath $taskPath -TaskName $taskName -ErrorAction SilentlyContinue; "
+            "if ($null -eq $info) { [Console]::Error.WriteLine('Task Scheduler info unavailable'); exit 1 }; "
+            "[pscustomobject]@{ State = [string]$task.State; LastTaskResult = [int64]$info.LastTaskResult } "
+            "| ConvertTo-Json -Compress"
+        )
+        try:
+            result = subprocess.run(  # noqa: S603
+                ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],  # noqa: S607
+                capture_output=True,
+                text=True,
+                timeout=_COMMAND_TIMEOUT_SECONDS,
+                check=False,
+                env=environment,
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            raise ServiceError(f"failed to execute powershell.exe: {error}") from error  # noqa: TRY003
+        if check and result.returncode != 0:
+            detail = _command_detail(result.stderr or result.stdout)
+            raise ServiceError(f"powershell.exe Task Scheduler state query failed{detail}")  # noqa: TRY003
+        return result
+
 
 def _launcher_arguments(definition: ServiceDefinition) -> list[str]:
     log_dir = Path(definition.data_dir) / "logs"
@@ -449,6 +494,83 @@ def _child(parent: ET.Element | None, name: str) -> ET.Element | None:
     return next((child for child in parent if _local_name(child.tag) == name), None)
 
 
+def _has_exact_children(parent: ET.Element | None, expected: tuple[str, ...]) -> bool:
+    return parent is not None and tuple(_local_name(child.tag) for child in parent) == expected
+
+
+def _has_exact_attributes(parent: ET.Element | None, expected: dict[str, str]) -> bool:
+    return parent is not None and parent.attrib == expected
+
+
+def _has_children(
+    parent: ET.Element | None,
+    *,
+    required: tuple[str, ...],
+    optional: tuple[str, ...] = (),
+) -> bool:
+    if parent is None:
+        return False
+    names = tuple(_local_name(child.tag) for child in parent)
+    return (
+        all(names.count(name) == 1 for name in required)
+        and all(names.count(name) <= 1 for name in optional)
+        and all(name in required or name in optional for name in names)
+    )
+
+
+def _task_structure_mismatch(root: ET.Element, definition: ServiceDefinition) -> str | None:
+    triggers = _child(root, "Triggers")
+    principals = _child(root, "Principals")
+    actions = _child(root, "Actions")
+    return next(
+        (
+            mismatch
+            for mismatch in (
+                _action_structure_mismatch(actions),
+                _principal_structure_mismatch(principals),
+                _trigger_structure_mismatch(triggers, definition),
+            )
+            if mismatch is not None
+        ),
+        None,
+    )
+
+
+def _action_structure_mismatch(actions: ET.Element | None) -> str | None:
+    execute = _child(actions, "Exec")
+    if not _has_exact_attributes(actions, {"Context": "Author"}):
+        return "action attributes"
+    if not _has_exact_children(actions, ("Exec",)):
+        return "action structure"
+    if not _has_exact_attributes(execute, {}):
+        return "exec action attributes"
+    if not _has_exact_children(execute, ("Command", "Arguments", "WorkingDirectory")):
+        return "exec action structure"
+    return None
+
+
+def _principal_structure_mismatch(principals: ET.Element | None) -> str | None:
+    principal = _child(principals, "Principal")
+    if not _has_exact_children(principals, ("Principal",)):
+        return "principal structure"
+    if not _has_exact_attributes(principal, {"id": "Author"}):
+        return "principal attributes"
+    if not _has_children(principal, required=("UserId", "LogonType"), optional=("RunLevel",)):
+        return "principal element structure"
+    return None
+
+
+def _trigger_structure_mismatch(triggers: ET.Element | None, definition: ServiceDefinition) -> str | None:
+    logon = _child(triggers, "LogonTrigger")
+    if definition.start_on_login and not _has_exact_children(triggers, ("LogonTrigger",)):
+        return "trigger structure"
+    if definition.start_on_login and not _has_children(logon, required=("UserId",), optional=("Enabled",)):
+        return "logon trigger structure"
+    if not definition.start_on_login and triggers is not None and not _has_exact_children(triggers, ()):
+        return "trigger structure"
+    return None
+
+
 def _text(parent: ET.Element | None, name: str) -> str:
     child = _child(parent, name)
     return "" if child is None or child.text is None else child.text.strip()
@@ -463,6 +585,13 @@ def _normalize_identifier(identifier: str) -> str:
     if value.endswith("\\") or any(character in value for character in "\x00\r\n"):
         raise ValueError("Task Scheduler task identifier is invalid")  # noqa: TRY003
     return value
+
+
+def _task_path_and_name(identifier: str) -> tuple[str, str]:
+    parent, separator, name = identifier.rpartition("\\")
+    if not separator or not name:
+        raise ValueError("Task Scheduler task identifier is invalid")  # noqa: TRY003
+    return (parent + "\\") if parent else "\\", name
 
 
 def _same_path(actual: str, expected: str) -> bool:
@@ -506,19 +635,17 @@ def _is_task_not_found(result: subprocess.CompletedProcess[str]) -> bool:
     return result.returncode & 0xFFFFFFFF == _TASK_NOT_FOUND_HRESULT
 
 
-def _list_output(output: str) -> dict[str, str]:
-    values: dict[str, str] = {}
-    for line in output.splitlines():
-        key, separator, value = line.partition(":")
-        if separator:
-            values[key.strip().casefold()] = value.strip()
-    return values
-
-
-def _last_result(value: str) -> int | None:
-    try:
-        result = int(value.strip(), 0)
-    except ValueError:
+def _last_result(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        result = value
+    elif isinstance(value, str):
+        try:
+            result = int(value.strip(), 0)
+        except ValueError:
+            return None
+    else:
         return None
     return None if result in _TASK_STATUS_RESULT_RANGE or result == _TASK_HAS_NOT_RUN_RESULT else result
 
