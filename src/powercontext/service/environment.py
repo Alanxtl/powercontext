@@ -187,7 +187,9 @@ def _windows_file_owner_sid(path: Path) -> str:
     security_descriptor = ctypes.c_void_p()
     local_free: Any = None
     try:
-        win_dll = ctypes.WinDLL
+        win_dll = getattr(ctypes, "WinDLL")  # noqa: B009
+        win_error = getattr(ctypes, "WinError")  # noqa: B009
+        get_last_error = getattr(ctypes, "get_last_error")  # noqa: B009
         advapi32 = win_dll("Advapi32", use_last_error=True)
         kernel32 = win_dll("Kernel32", use_last_error=True)
         local_free = kernel32.LocalFree
@@ -217,14 +219,14 @@ def _windows_file_owner_sid(path: Path) -> str:
             ctypes.byref(security_descriptor),
         )
         if error_code:
-            raise ctypes.WinError(error_code)
+            raise win_error(error_code)
 
         convert_sid = advapi32.ConvertSidToStringSidW
         convert_sid.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_wchar_p)]
         convert_sid.restype = ctypes.c_int
         owner_text = ctypes.c_wchar_p()
         if not convert_sid(owner, ctypes.byref(owner_text)) or owner_text.value is None:
-            raise ctypes.WinError(ctypes.get_last_error())
+            raise win_error(get_last_error())
         try:
             return owner_text.value
         finally:
