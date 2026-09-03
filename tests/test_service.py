@@ -334,6 +334,7 @@ def test_service_controller_installs_and_starts_one_native_registration(tmp_path
     assert adapter.events == ["write", "reload", "enable", "start:True"]
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="login auto-start opt-out is Windows-specific")
 def test_service_controller_can_install_without_login_autostart(tmp_path: Path) -> None:
     adapter = FakeAdapter(tmp_path)
     controller = ServiceController(adapter, probe=_manager_probe(adapter), sleep=lambda _: None)
