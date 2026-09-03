@@ -286,6 +286,9 @@ def _environment_file(tmp_path: Path) -> Path:
             timeout=10,
             check=True,
         ).stdout.strip()
+        # Hosted Windows runners can create pytest's temporary files with an
+        # inherited owner that differs from the account running the test.
+        _run("icacls.exe", str(environment), "/setowner", account)
         _run(
             "icacls.exe",
             str(environment),
