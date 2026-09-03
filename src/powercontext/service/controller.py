@@ -24,6 +24,7 @@ from contextlib import contextmanager, nullcontext, suppress
 from dataclasses import replace
 from importlib.metadata import version
 from pathlib import Path
+from typing import cast
 
 from powercontext.cli.env_file import environment_context
 from powercontext.paths import POWERCONTEXT_HOME_ENV, powercontext_data_dir
@@ -392,6 +393,11 @@ def _service_lock(path: Path, *, timeout: float = 5.0) -> Generator[None, None, 
 def _windows_service_lock(path: Path, *, timeout: float) -> Generator[None, None, None]:
     import msvcrt
 
+    # These Windows-only members are missing from the stdlib type stubs.
+    msvcrt_members = vars(msvcrt)
+    locking = cast(Callable[[int, int, int], None], msvcrt_members["locking"])
+    lock_nonblocking = cast(int, msvcrt_members["LK_NBLCK"])
+    lock_unlock = cast(int, msvcrt_members["LK_UNLCK"])
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
     try:
@@ -401,7 +407,7 @@ def _windows_service_lock(path: Path, *, timeout: float) -> Generator[None, None
         while True:
             try:
                 os.lseek(descriptor, 0, os.SEEK_SET)
-                msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+                locking(descriptor, lock_nonblocking, 1)
                 break
             except OSError:
                 if time.monotonic() >= deadline:
@@ -413,7 +419,7 @@ def _windows_service_lock(path: Path, *, timeout: float) -> Generator[None, None
     finally:
         with suppress(OSError):
             os.lseek(descriptor, 0, os.SEEK_SET)
-            msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
+            locking(descriptor, lock_unlock, 1)
         os.close(descriptor)
 
 
