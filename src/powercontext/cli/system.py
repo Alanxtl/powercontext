@@ -56,6 +56,28 @@ PLUGIN_NAME = "powercontext"
 CLAUDE_MARKETPLACE_NAME = "powercontext"
 _GITHUB_REPOSITORY = re.compile(r"^[^/\s]+/[^/\s]+$")
 _CODEX_REQUIRED_MCP_TOOLS = frozenset({"remember_memory", "search_memory"})
+_CODEX_FULL_MCP_TOOLS = _CODEX_REQUIRED_MCP_TOOLS | frozenset({
+    "capture_content_source",
+    "create_work_contract",
+    "handoff_current_work",
+    "commit_handoff",
+    "continue_handoff",
+    "acknowledge_handoff",
+    "record_task_outcome",
+    "get_experience",
+    "generate_experience",
+    "propose_experience",
+    "list_managed_skills",
+    "get_skill",
+    "generate_skill",
+    "propose_skill",
+    "list_artifact_candidates",
+    "get_artifact_candidate",
+    "scan_external_skills",
+    "list_external_skills",
+    "resolve_external_skill",
+    "import_external_skill",
+})
 _CODEX_APP_SERVER_TIMEOUT_SECONDS = 15.0
 
 setup_app = typer.Typer(
@@ -450,7 +472,10 @@ def setup_codex(
         raise typer.Exit(code=1) from error
 
     diagnostics = run_codex_diagnostics()
-    if not _diagnostics_ok(diagnostics):
+    # Installing against a Server with basic Memory support remains valid. Doctor
+    # separately reports missing full-profile tools instead of failing installation.
+    connection_checks = {name: check for name, check in diagnostics.items() if name != "mcp_full_profile"}
+    if not _diagnostics_ok(connection_checks):
         _write_diagnostics(diagnostics, json_output=json_output)
         raise typer.Exit(code=1)
 
@@ -1442,6 +1467,9 @@ def run_codex_diagnostics() -> dict[str, Diagnostic]:
         )
     diagnostics = {
         "codex": Diagnostic(status=DiagnosticStatus.OK, detail=executable),
+        "mcp_full_profile": Diagnostic(
+            status=DiagnosticStatus.SKIPPED, detail="not checked because native MCP discovery has not succeeded"
+        ),
         "plugin": Diagnostic(
             status=DiagnosticStatus.OK if plugin is not None else DiagnosticStatus.FAILED,
             detail=(
@@ -1544,6 +1572,17 @@ def run_codex_diagnostics() -> dict[str, Diagnostic]:
             f"Codex native MCP initialized and discovered {len(tool_names)} tools"
             if not missing
             else "Codex native MCP did not discover required tools: " + ", ".join(missing) + failure_hint
+        ),
+    )
+    missing_full = sorted(_CODEX_FULL_MCP_TOOLS - tool_names)
+    diagnostics["mcp_full_profile"] = Diagnostic(
+        status=DiagnosticStatus.OK if not missing_full else DiagnosticStatus.DEGRADED,
+        detail=(
+            "Codex native MCP exposes all full-profile tools; model readiness and Hook execution are separate checks"
+            if not missing_full
+            else "Full-profile tools unavailable: "
+            + ", ".join(missing_full)
+            + "; upgrade the Server and refresh the plugin, then open a new Codex session"
         ),
     )
     return diagnostics

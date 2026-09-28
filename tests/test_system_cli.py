@@ -46,6 +46,8 @@ _probe_codex_mcp_status = system_cli._probe_codex_mcp_status
 
 @pytest.fixture(autouse=True)
 def isolated_codex_plugin_cache(tmp_path, monkeypatch):
+    # Setup reads .env from cwd; tests must not consume a developer's credentials.
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     monkeypatch.delenv("POWERCONTEXT_CODEX_AUTHORIZATION", raising=False)
     monkeypatch.delenv("POWERCONTEXT_CODEX_SCOPE_ID", raising=False)
@@ -134,7 +136,7 @@ def test_setup_codex_installs_from_a_remote_ref_and_prepares_storage(
         ],
     )
 
-    assert result.exit_code == 0
+    assert result.exit_code == 0, result.output
     assert json.loads(result.output) == {
         "marketplace": "powercontext",
         "plugin": "powercontext",
@@ -183,6 +185,38 @@ def test_codex_diagnostics_verify_native_mcp_tools_without_process_authorization
     assert diagnostics["authorization"].status is DiagnosticStatus.OK
     assert diagnostics["mcp_tools"].status is DiagnosticStatus.OK
     assert "2 tools" in diagnostics["mcp_tools"].detail
+    assert diagnostics["mcp_full_profile"].status is DiagnosticStatus.DEGRADED
+    assert "generate_experience" in diagnostics["mcp_full_profile"].detail
+    assert "import_external_skill" in diagnostics["mcp_full_profile"].detail
+
+
+def test_codex_diagnostics_recognize_full_tools_from_the_server(monkeypatch) -> None:
+    import asyncio
+
+    from fastmcp import Client
+
+    from powercontext.server.app import create_app
+    from powercontext.server.mcp import create_mcp_server
+
+    async def catalog():
+        async with Client(create_mcp_server(create_app())) as client:
+            return {tool.name: {} for tool in await client.list_tools()}
+
+    tools = asyncio.run(catalog())
+    monkeypatch.setattr(system_cli, "which", lambda _name: "/usr/bin/codex")
+    monkeypatch.setattr(
+        system_cli,
+        "_run_codex_json",
+        lambda *_args: {"installed": [{"name": "powercontext", "installed": True, "enabled": True}]},
+    )
+    monkeypatch.setattr(system_cli, "_probe_codex_mcp_status", lambda **_kwargs: {"tools": tools})
+    diagnostics = system_cli.run_codex_diagnostics()
+    assert diagnostics["mcp_full_profile"].status is DiagnosticStatus.OK
+    tools.pop("resolve_external_skill")
+    diagnostics = system_cli.run_codex_diagnostics()
+    assert diagnostics["mcp_tools"].status is DiagnosticStatus.OK
+    assert diagnostics["mcp_full_profile"].status is DiagnosticStatus.DEGRADED
+    assert "resolve_external_skill" in diagnostics["mcp_full_profile"].detail
 
 
 def test_codex_diagnostics_fail_when_required_native_tools_are_missing(monkeypatch) -> None:
