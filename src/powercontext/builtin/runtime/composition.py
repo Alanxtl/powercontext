@@ -1601,6 +1601,17 @@ def _usage_reporting_embedding_model(model: EmbeddingModel | None) -> EmbeddingM
     return UsageReportingEmbeddingModel(model)
 
 
+def _embedding_provider_settings(settings: InferenceConfig, dimension: int) -> dict[str, JsonValue]:
+    """Return embedding request settings, keeping stored dimension separate from the wire field."""
+
+    request_settings = dict(settings.embedding_model_settings)
+    if settings.embedding_send_dimensions:
+        request_settings["dimensions"] = dimension
+    else:
+        request_settings.pop("dimensions", None)
+    return request_settings
+
+
 async def _embedding_models(
     settings: InferenceConfig,
     resources: AsyncExitStack,
@@ -1652,7 +1663,7 @@ async def _embedding_models(
     limits = InferenceLimits(timeout_seconds=settings.embedding_timeout_seconds)
     embedding_settings = cast(
         EmbeddingSettings,
-        settings.embedding_model_settings | {"dimensions": profile.dimension},
+        _embedding_provider_settings(settings, profile.dimension),
     )
 
     def adapter(instrument: InstrumentationSettings | bool | None) -> EmbeddingModel:

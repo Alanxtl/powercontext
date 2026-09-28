@@ -246,6 +246,7 @@ class InferenceConfig(BaseModel):
     embedding_model_settings: dict[str, JsonValue] = Field(default_factory=dict)
     embedding_profile_id: str | None = None
     embedding_dimension: int | None = Field(default=None, ge=1)
+    embedding_send_dimensions: bool = True
     embedding_normalization: Literal["none", "unit"] = "unit"
     embedding_timeout_seconds: float = Field(default=30.0, gt=0)
     embedding_batch_size: int = Field(default=10, ge=1)
