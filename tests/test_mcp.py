@@ -91,6 +91,7 @@ def test_mcp_exposes_only_data_plane_and_integration_control_operations() -> Non
         "create_work_contract",
         "finalize_handoff",
         "get_artifact_candidate",
+        "get_memory_capacity",
         "get_memory_entry",
         "get_topic_memory",
         "get_scope",
@@ -118,7 +119,7 @@ def test_mcp_exposes_only_data_plane_and_integration_control_operations() -> Non
     assert prompt_count == 0
 
 
-def test_mcp_topic_memory_tools_are_read_only_and_flush_is_excluded() -> None:
+def test_mcp_memory_reads_are_read_only_and_flush_is_excluded() -> None:
     async def inspect_annotations() -> dict[str, Any]:
         async with Client(create_mcp_server(create_app())) as client:
             return {tool.name: tool.annotations for tool in await client.list_tools()}
@@ -126,11 +127,12 @@ def test_mcp_topic_memory_tools_are_read_only_and_flush_is_excluded() -> None:
     tools = run_async(inspect_annotations)
 
     assert "flush_topic_memory" not in tools
-    for name in ("search_topic_memory", "get_topic_memory"):
+    for name in ("search_topic_memory", "get_topic_memory", "get_memory_capacity"):
         annotations = tools[name]
         assert annotations is not None
         assert annotations.readOnlyHint is True
         assert annotations.destructiveHint is False
+        assert annotations.idempotentHint is True
         assert annotations.openWorldHint is False
 
 

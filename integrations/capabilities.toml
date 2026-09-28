@@ -54,6 +54,9 @@ capabilities = ["memory_read"]
 id = "get_memory_entry"
 capabilities = ["memory_read"]
 [[toolsets.tools]]
+id = "get_memory_capacity"
+capabilities = ["memory_read"]
+[[toolsets.tools]]
 id = "remember_memory"
 capabilities = ["memory_write"]
 [[toolsets.tools]]
