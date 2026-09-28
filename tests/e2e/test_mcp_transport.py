@@ -149,6 +149,17 @@ def test_mcp_projects_curated_tools_at_the_configured_server_path(tmp_path: Path
     tools = asyncio.run(exercise_tools())
 
     assert tools == {
+        "generate_experience",
+        "get_experience",
+        "propose_experience",
+        "generate_skill",
+        "get_skill",
+        "propose_skill",
+        "list_managed_skills",
+        "scan_external_skills",
+        "list_external_skills",
+        "resolve_external_skill",
+        "import_external_skill",
         "acknowledge_handoff",
         "activate_handoff",
         "approve_artifact_candidate",
