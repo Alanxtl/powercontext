@@ -150,7 +150,9 @@ same-Scope tail, and stops further provider calls. Flush and restart do not rese
 Topic generation accepts `max_tokens`, `temperature`, `top_p`, `top_k`, `seed`, `presence_penalty`, `frequency_penalty`,
 `timeout`, `openai_reasoning_effort`, `openai_text_verbosity`, `service_tier`, `openai_service_tier`,
 `anthropic_service_tier`, and `anthropic_effort` as bounded scalar settings. Topic Embedding accepts only `dimensions`
-and `truncate`. Background/hidden-history/native-tool settings and `extra_body` disable Topic processing while ordinary
+and `truncate`. For generation with `openai-chat:<model>`, the sole `extra_body` exception is
+`{"chat_template_kwargs":{"enable_thinking":false}}`, with a strict boolean and no extra keys at either level.
+Background/hidden-history/native-tool settings and all other `extra_body` forms disable Topic processing while ordinary
 inference continues; explicitly configured automatic Topic scheduling fails startup instead. Supported
 provider prefixes are `openai`, `openai-chat`, `openai-responses`, `anthropic`, `azure`, `azure-responses`, `deepseek`,
 and `openrouter`, plus the local `test` model; Embedding must also be supported by its SDK adapter. Topic SDK transport

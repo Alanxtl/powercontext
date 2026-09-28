@@ -679,6 +679,12 @@ def _artifact_processing_bindings(  # noqa: C901 - validate and assemble one reg
     }
     for family, schedule in automatic.items():
         if schedule is not None and family not in declared | registered:
+            if (
+                family == "topic-memory"
+                and config.runtime.artifact_processing_families is None
+                and config.inference.generation_model is not None
+            ):
+                validate_topic_memory_provider_settings(config.inference)
             issue = {
                 "memory": "scheduled-pipeline",
                 "experience": "scheduled-experience-pipeline",

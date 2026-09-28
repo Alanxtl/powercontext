@@ -1507,8 +1507,24 @@ def validate_topic_memory_provider_settings(inference: InferenceConfig) -> None:
         "openrouter",
     }
     embedding_providers = providers | {"minimax"}
+    generation_settings = dict(inference.generation_model_settings)
+    if "extra_body" in generation_settings:
+        body = generation_settings.pop("extra_body")
+        template = body.get("chat_template_kwargs") if isinstance(body, dict) else None
+        # Only this Chat Completions flag is allowed; extra_body can otherwise
+        # override SDK output limits, messages, or tools after budget validation.
+        if not (
+            inference.generation_model is not None
+            and inference.generation_model.startswith("openai-chat:")
+            and isinstance(body, dict)
+            and set(body) == {"chat_template_kwargs"}
+            and isinstance(template, dict)
+            and set(template) == {"enable_thinking"}
+            and template["enable_thinking"] is False
+        ):
+            raise BuiltinConfigurationError("topic-memory-provider-budget")
     for name, settings, allowed, provider_names in (
-        (inference.generation_model, inference.generation_model_settings, generation, providers),
+        (inference.generation_model, generation_settings, generation, providers),
         (
             inference.embedding_model,
             inference.embedding_model_settings,

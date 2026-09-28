@@ -142,7 +142,9 @@ Topic Worker 对尚未推进的 Scope Cursor 强制使用持久额度：跨全�
 Topic generation 只允许有界标量设置：`max_tokens`、`temperature`、`top_p`、`top_k`、`seed`、`presence_penalty`、
 `frequency_penalty`、`timeout`、`openai_reasoning_effort`、`openai_text_verbosity`、`service_tier`、
 `openai_service_tier`、`anthropic_service_tier`、`anthropic_effort`；Topic Embedding 只允许 `dimensions` 和 `truncate`。
-background、隐藏历史、native tools 和 `extra_body` 会使 Topic 处理不可用，普通推理仍可继续；显式配置自动 Topic 调度时
+对于 `openai-chat:<model>` 生成，`extra_body` 唯一允许的例外为
+`{"chat_template_kwargs":{"enable_thinking":false}}`，要求严格的布尔值，且两层均不能包含其他字段。
+background、隐藏历史、native tools 和其他形式的 `extra_body` 会使 Topic 处理不可用，普通推理仍可继续；显式配置自动 Topic 调度时
 则启动失败。支持的 provider 前缀为 `openai`、`openai-chat`、
 `openai-responses`、`anthropic`、`azure`、`azure-responses`、`deepseek`、`openrouter`，以及本地 `test` 模型；Embedding
 还必须受其 SDK adapter 支持。Topic 禁用 SDK transport 重试和自动 continuation，非 Topic 推理保留既有设置行为。
