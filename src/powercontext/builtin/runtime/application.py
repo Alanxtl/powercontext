@@ -64,11 +64,14 @@ from powercontext.builtin.artifacts.memory import (
     MemoryHit,
     MemoryQueryEmbedding,
     MemoryService,
+    MemoryWritePlan,
+    MemoryWriteVerdict,
 )
 from powercontext.builtin.artifacts.memory.errors import (
     CapabilityNotSupportedError,
     InvalidMemoryCitationError,
     MemoryEntryNotFoundError,
+    MemoryWriteRejectedError,
 )
 from powercontext.builtin.artifacts.profile.service import RelationalProfileService
 from powercontext.builtin.artifacts.prompt import (
@@ -2389,7 +2392,9 @@ class ScopedMemoryApplication:
                 service = context.artifacts.memory
                 current = await _head_or_none(service, context.artifacts.memory_artifact_id)
                 _validate_expected_revision(current, request.expected_revision)
-                updated = await service.remember(memory=current, entries=request.entries, mode="append")
+                plan = await service.plan_remember(memory=current, entries=request.entries, mode="append")
+                _raise_if_held(plan)
+                updated = await service.apply(plan)
             if updated is None:
                 raise _RuntimeStateError("empty-write")
             return MemoryMutationResult(
@@ -2521,7 +2526,7 @@ class ScopedMemoryApplication:
                     context.artifacts.memory_artifact_id,
                     request.citation,
                 )
-                updated = await service.remember(
+                plan = await service.plan_remember(
                     memory=current,
                     entries=(
                         MemoryEntryInput(
@@ -2533,6 +2538,8 @@ class ScopedMemoryApplication:
                     ),
                     mode="append",
                 )
+                _raise_if_held(plan)
+                updated = await service.apply(plan)
             if updated is None:
                 raise _RuntimeStateError("empty-write")
             revised = next(item for item in await service.entries(updated) if item.entry_id == entry.entry_id)
@@ -2849,16 +2856,22 @@ class ScheduledSourceProcessor:
                         if span is not None:
                             span.set_outcome("failure")
                     else:
-                        outcome = "success" if result.processed else "noop"
+                        outcome = "hold" if result.held_count else "success" if result.processed else "noop"
                         _log_scheduled_processing(
                             outcome,
                             operation="process_source_window",
                             started_at=started_at,
                             source_count=result.source_count,
+                            held_count=result.held_count,
+                            hold_codes=result.hold_codes,
                         )
                         if span is not None:
                             span.set_outcome(outcome)
-                            span.set_attributes({"powercontext.background.source_count": result.source_count})
+                            span.set_attributes({
+                                "powercontext.background.source_count": result.source_count,
+                                "powercontext.background.memory_held_count": result.held_count,
+                                "powercontext.background.memory_hold_codes": ",".join(result.hold_codes),
+                            })
 
 
 class ScheduledExperienceProcessor:
@@ -2928,6 +2941,8 @@ def _log_scheduled_processing(
     error: Exception | None = None,
     source_count: int | None = None,
     candidate_count: int | None = None,
+    held_count: int | None = None,
+    hold_codes: tuple[str, ...] = (),
 ) -> None:
     extra = {
         "event": "background.operation.completed",
@@ -2940,6 +2955,10 @@ def _log_scheduled_processing(
         extra["source_count"] = source_count
     if candidate_count is not None:
         extra["candidate_count"] = candidate_count
+    if held_count is not None:
+        extra["held_count"] = held_count
+    if hold_codes:
+        extra["hold_codes"] = hold_codes
     level = logging.ERROR if error is not None else logging.INFO
     log_safely(
         logger,
@@ -3511,6 +3530,16 @@ def _is_stale_memory_search(error: CapabilityNotSupportedError | InvalidMemoryCi
     return (isinstance(error, CapabilityNotSupportedError) and error.capability == "head") or (
         isinstance(error, InvalidMemoryCitationError) and error.code == "memory-mismatch"
     )
+
+
+def _raise_if_held(plan: MemoryWritePlan) -> None:
+    """Surface a gate refusal as a structured error so the caller can read code and reason."""
+
+    decision = plan.decision
+    if decision is None or decision.verdict is not MemoryWriteVerdict.HOLD:
+        return
+    code = "unspecified" if decision.code is None else decision.code.value
+    raise MemoryWriteRejectedError(code, decision.reason)
 
 
 def _validate_expected_revision(memory: Memory | None, expected_revision: int | None) -> None:

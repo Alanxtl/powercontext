@@ -66,7 +66,9 @@ from powercontext.builtin.artifacts.memory import (
     MemoryQueryEmbedding,
     MemoryReranker,
     MemoryService,
+    MemoryWriteGate,
     MemoryWritePlan,
+    MemoryWriteVerdict,
 )
 from powercontext.builtin.artifacts.profile import Profile
 from powercontext.builtin.artifacts.profile.management import ProfileManagementWriter
@@ -234,6 +236,7 @@ from powercontext.sources import (
     SourceDefinitionManifest,
     SourceDefinitionRegistry,
     SourceObservation,
+    SourceProjectionKey,
     SourceRef,
     TextEvidence,
 )
@@ -301,6 +304,7 @@ class _ScopedServices:
     memory_reranker: MemoryReranker | None
     memory_rerank_candidate_limit: int
     decision_model: DecisionModel | None
+    memory_write_gate: MemoryWriteGate | None
     memory_capacity_budget: MemoryCapacityBudget
     memory_compaction: MemoryCompactionPolicy
     memory_max_history_revisions: int
@@ -367,6 +371,7 @@ class _ScopedServices:
                 connection=connection,
             ),
             id_factory=self.id_factory,
+            write_gate=self.memory_write_gate,
         )
 
     def evidence(self, authorize: EvidenceAuthorizer | None = None) -> EvidenceResolver:
@@ -523,6 +528,7 @@ class RelationalContexts:
         token_estimator: TokenEstimator | None = None,
         memory_reranker: MemoryReranker | None = None,
         decision_model: DecisionModel | None = None,
+        memory_write_gate: MemoryWriteGate | None = None,
         memory_rerank_candidate_limit: int = 30,
         memory_capacity_budget: MemoryCapacityBudget | None = None,
         memory_compaction: MemoryCompactionPolicy | None = None,
@@ -687,6 +693,7 @@ class RelationalContexts:
         self._token_estimator = token_estimator
         self._memory_reranker = memory_reranker
         self._decision_model = decision_model
+        self._memory_write_gate = memory_write_gate
         self._memory_rerank_candidate_limit = memory_rerank_candidate_limit
         self._memory_capacity_budget = (
             MemoryCapacityBudget() if memory_capacity_budget is None else memory_capacity_budget
@@ -1431,6 +1438,7 @@ class RelationalContexts:
             memory_reranker=self._memory_reranker,
             memory_rerank_candidate_limit=self._memory_rerank_candidate_limit,
             decision_model=self._decision_model,
+            memory_write_gate=self._memory_write_gate,
             memory_capacity_budget=self._memory_capacity_budget,
             memory_compaction=self._memory_compaction,
             memory_max_history_revisions=self._memory_max_history_revisions,
@@ -1466,6 +1474,17 @@ class _RelationalMemorySourceResolver:
 
     def as_ref(self, source: Source, /) -> SourceRef:
         return self._catalog.as_ref(source)
+
+    def project(self, source: Source, key: SourceProjectionKey, /) -> object:
+        return self._catalog.project(source, key)
+
+    async def get_ref(self, ref: SourceRef, /) -> Source:
+        try:
+            async with self._database.connection(self._connection) as connection:
+                (stored,) = await self._access.require_for_generation(connection, self._scope_id, (ref,))
+        except RepositoryNotFoundError:
+            raise SourceNotFoundError(ref) from None
+        return stored.value
 
     async def get(self, source: Source, /) -> Source:
         try:
@@ -1572,13 +1591,16 @@ class _RelationalArtifactResolver:
 
     async def get(self, artifact: Artifact[object], /) -> Artifact[object]:
         try:
-            async with self._database.connection(self._bound_connection) as connection:
-                return cast(
-                    Artifact[object],
-                    await self._repository.get(connection, self._scope_id, artifact.as_ref()),
-                )
-        except RepositoryNotFoundError:
+            return await self.get_ref(artifact.as_ref())
+        except ArtifactNotFoundError:
             raise ArtifactNotFoundError(artifact) from None
+
+    async def get_ref(self, ref: ArtifactRef, /) -> Artifact[object]:
+        try:
+            async with self._database.connection(self._bound_connection) as connection:
+                return cast(Artifact[object], await self._repository.get(connection, self._scope_id, ref))
+        except RepositoryNotFoundError:
+            raise ArtifactNotFoundError(ref) from None
 
 
 class _RelationalTriggers:
@@ -1700,6 +1722,7 @@ class _RelationalTriggers:
             prepared = (
                 None if not sources else await self._prepare_memory(sources, authorize_snapshot=authorize_snapshot)
             )
+            held = _is_held_write(prepared)
             commit = None if prepared is None else prepared.commit
             with self._stage(
                 _MEMORY_COMMIT_STAGE,
@@ -1733,6 +1756,8 @@ class _RelationalTriggers:
                 current_cursor=action.through,
                 source_count=len(sources),
                 memory_ref=None if updated is None else updated.as_ref(),
+                held_count=1 if held else 0,
+                hold_codes=_hold_codes(prepared),
             )
 
     async def _sources(
@@ -1995,6 +2020,26 @@ def _validate_schema_value(name: str, schema: Mapping[str, Any], value: object) 
         _json_schema_validator(name, schema).validate(value)
     except (JsonSchemaValidationError, Unresolvable) as error:
         raise InvalidSourceObservationError("schema", f"value does not match {name!r}") from error
+
+
+def _is_held_write(plan: MemoryWritePlan | None) -> bool:
+    """Report whether the gate refused this prepared write."""
+
+    if plan is None:
+        return False
+    decision = plan.decision
+    return decision is not None and decision.verdict is MemoryWriteVerdict.HOLD
+
+
+def _hold_codes(plan: MemoryWritePlan | None) -> tuple[str, ...]:
+    """Expose the structured refusal code of a held write to the window caller."""
+
+    if not _is_held_write(plan) or plan is None:
+        return ()
+    decision = plan.decision
+    if decision is None or decision.code is None:
+        return ()
+    return (decision.code.value,)
 
 
 def _scoped_id_factory(memory_artifact_id: str, delegate: IdFactory | None) -> IdFactory:
