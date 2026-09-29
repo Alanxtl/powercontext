@@ -24,8 +24,13 @@ powercontext doctor codex
 该命令会把仓库添加为 Codex marketplace，安装 PowerContext 插件，并创建用户数据目录。重复执行是安全的。
 `--ref` 应与安装 PowerContext 工具时使用的 ref 一致。
 
-配置完成后开启新的 Codex 会话。通过 `/hooks` 查看 PowerContext `UserPromptSubmit` Hook，并在收到提示时
-授予信任。
+配置完成后开启新的 Codex 会话。通过 `/hooks` 查看 PowerContext `UserPromptSubmit` Hook，并在收到提示时授予信任。
+
+`powercontext doctor codex --json` 通过 `mcp_tools` 报告基础 MCP 连接，通过 `mcp_full_profile` 报告完整工具覆盖。
+完整覆盖要求 Codex 集成 manifest 的 `server-mcp` 中声明的全部能力工具，包括 Memory 维护、Scope 管理和
+Handoff 操作。缺失工具会按名称列出，并使结果降级；工具发现不代表模型就绪、Hook 已执行或具有写入权限。
+具备基础 Memory 支持时，`setup codex` 和 `setup select --host codex` 均可成功，`doctor` 单独报告 full 覆盖不完整。
+鉴权或基础连接失败仍会使安装失败。
 
 ## 理解自动恢复、Memory 和 Handoff
 

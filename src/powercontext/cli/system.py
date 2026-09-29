@@ -56,27 +56,48 @@ PLUGIN_NAME = "powercontext"
 CLAUDE_MARKETPLACE_NAME = "powercontext"
 _GITHUB_REPOSITORY = re.compile(r"^[^/\s]+/[^/\s]+$")
 _CODEX_REQUIRED_MCP_TOOLS = frozenset({"remember_memory", "search_memory"})
-_CODEX_FULL_MCP_TOOLS = _CODEX_REQUIRED_MCP_TOOLS | frozenset({
+# Keep the packaged checklist aligned with capability-bearing server-mcp tools in
+# integrations/capabilities.toml; CLI contract tests exercise each declared tool.
+_CODEX_FULL_MCP_TOOLS = frozenset({
+    "acknowledge_handoff",
+    "activate_handoff",
     "capture_content_source",
-    "create_work_contract",
-    "handoff_current_work",
+    "clear_scope_binding",
     "commit_handoff",
     "continue_handoff",
-    "acknowledge_handoff",
-    "record_task_outcome",
-    "get_experience",
+    "create_scope",
+    "create_work_contract",
+    "finalize_handoff",
     "generate_experience",
-    "propose_experience",
-    "list_managed_skills",
-    "get_skill",
     "generate_skill",
-    "propose_skill",
-    "list_artifact_candidates",
     "get_artifact_candidate",
-    "scan_external_skills",
-    "list_external_skills",
-    "resolve_external_skill",
+    "get_experience",
+    "get_handoff_report",
+    "get_memory_capacity",
+    "get_memory_entry",
+    "get_scope",
+    "get_skill",
+    "get_topic_memory",
+    "handoff_current_work",
     "import_external_skill",
+    "list_artifact_candidates",
+    "list_external_skills",
+    "list_managed_skills",
+    "list_memory_entries",
+    "list_scopes",
+    "propose_experience",
+    "propose_skill",
+    "publish_artifact",
+    "record_task_outcome",
+    "remember_memory",
+    "resolve_external_skill",
+    "resolve_scope_binding",
+    "retire_memory_entry",
+    "revise_memory_entry",
+    "scan_external_skills",
+    "search_memory",
+    "search_topic_memory",
+    "set_scope_binding",
 })
 _CODEX_APP_SERVER_TIMEOUT_SECONDS = 15.0
 
@@ -474,7 +495,7 @@ def setup_codex(
     diagnostics = run_codex_diagnostics()
     # Installing against a Server with basic Memory support remains valid. Doctor
     # separately reports missing full-profile tools instead of failing installation.
-    connection_checks = {name: check for name, check in diagnostics.items() if name != "mcp_full_profile"}
+    connection_checks = codex_setup_checks(diagnostics)
     if not _diagnostics_ok(connection_checks):
         _write_diagnostics(diagnostics, json_output=json_output)
         raise typer.Exit(code=1)
@@ -1427,6 +1448,11 @@ def _local_service_diagnostics(server_url: str) -> dict[str, Diagnostic]:
         ),
     )
     return diagnostics
+
+
+def codex_setup_checks(diagnostics: dict[str, Diagnostic]) -> dict[str, Diagnostic]:
+    """Require working basic connectivity at installation, leaving full coverage to doctor."""
+    return {name: check for name, check in diagnostics.items() if name != "mcp_full_profile"}
 
 
 def run_codex_diagnostics() -> dict[str, Diagnostic]:
