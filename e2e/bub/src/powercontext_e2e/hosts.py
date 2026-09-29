@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from os import environ
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -24,20 +25,28 @@ from harbor.models.trial.config import AgentConfig, ServiceVolumeConfig
 
 from .catalog import ContinuationEvaluationSpec, E2ETask, MemoryEvaluationSpec
 from .harbor_agent import BUB_ACP_SERVER_VERSION, BUB_VERSION, REMOTE_CODEX_AUTH, REMOTE_SOURCE
-from .settings import bub_environment, codex_auth_path, powercontext_bub_environment
+from .harbor_codex import CODEX_VERSION
+from .settings import bub_environment, codex_auth_path, powercontext_bub_environment, powercontext_codex_environment
+
+# Bub installs its plugin against the local powercontext package, so its container gets that package's sources.
+POWERCONTEXT_PACKAGE_PATHS = ("pyproject.toml", "README.md", "LICENSE", "src")
 
 
 class HostAdapter(Protocol):
     """Own the parts of a Harbor job that depend on the agent host rather than the workload."""
 
+    name: str
     version: str
     protocol_version: str
 
-    def model_configured(self) -> bool:
-        """Report whether the runtime selected a model for model-backed workloads."""
+    def missing_settings(self) -> tuple[str, ...]:
+        """Return the runtime settings that model-backed workloads need and the environment does not provide."""
 
     def agent_model(self) -> str | None:
         """Return the runtime-selected model recorded in evidence."""
+
+    def agent_settings(self) -> dict[str, str]:
+        """Return runtime-selected agent settings, other than the model, recorded in evidence."""
 
     def mounts(self, task: E2ETask, repository: Path) -> list[ServiceVolumeConfig]:
         """Return host-owned bind mounts for the task container, such as the integration sources it installs."""
@@ -60,17 +69,24 @@ class HostAdapter(Protocol):
 class BubHost:
     """Run Bub through its ACP server with the local PowerContext Bub plugin."""
 
+    name = "bub"
     version = BUB_VERSION
     protocol_version = BUB_ACP_SERVER_VERSION
 
-    def model_configured(self) -> bool:
-        return "BUB_MODEL" in bub_environment()
+    def missing_settings(self) -> tuple[str, ...]:
+        return () if "BUB_MODEL" in bub_environment() else ("BUB_MODEL",)
 
     def agent_model(self) -> str | None:
         return bub_environment().get("BUB_MODEL")
 
+    def agent_settings(self) -> dict[str, str]:
+        return {}
+
     def mounts(self, task: E2ETask, repository: Path) -> list[ServiceVolumeConfig]:
-        mounts = source_mounts(repository, ("integrations/bub", "e2e/bub/source-overrides.txt"))
+        mounts = source_mounts(
+            repository,
+            (*POWERCONTEXT_PACKAGE_PATHS, "integrations/bub", "e2e/bub/source-overrides.txt"),
+        )
         if task.execution.model and (auth_path := codex_auth_path()).is_file():
             mounts.append(read_only_bind(auth_path, REMOTE_CODEX_AUTH))
         return mounts
@@ -115,6 +131,65 @@ class BubHost:
         )
 
 
+class CodexHost:
+    """Run Codex CLI through Harbor's Codex agent with the local PowerContext Codex plugin.
+
+    Both arms install the plugin; only the ON arm enables Codex plugins and binds a Scope. Harbor authenticates Codex
+    from ``CODEX_AUTH_JSON_PATH``, ``CODEX_FORCE_AUTH_JSON``, or ``OPENAI_API_KEY``.
+    """
+
+    name = "codex"
+    version = CODEX_VERSION
+    # The harness drives Codex through `codex exec --json` of the same CLI.
+    protocol_version = CODEX_VERSION
+
+    def missing_settings(self) -> tuple[str, ...]:
+        required = {
+            "POWERCONTEXT_E2E_CODEX_MODEL": self.agent_model(),
+            "POWERCONTEXT_CODEX_SERVER_URL": _codex_server_url(),
+        }
+        return tuple(name for name, value in required.items() if value is None)
+
+    def agent_model(self) -> str | None:
+        return environ.get("POWERCONTEXT_E2E_CODEX_MODEL") or None
+
+    def agent_settings(self) -> dict[str, str]:
+        # The published SWE-bench Pro run used medium reasoning; Harbor's own default is high.
+        return {"reasoning_effort": environ.get("POWERCONTEXT_E2E_CODEX_REASONING_EFFORT") or "medium"}
+
+    def mounts(self, task: E2ETask, repository: Path) -> list[ServiceVolumeConfig]:
+        # The directory is the plugin's local marketplace; Codex copies the plugin into CODEX_HOME from here.
+        return source_mounts(repository, ("integrations/codex",))
+
+    def agent_config(
+        self,
+        task: E2ETask,
+        *,
+        scope_id: str | None,
+        invocation_scopes: tuple[str, ...] | None,
+    ) -> AgentConfig:
+        if invocation_scopes is not None:
+            raise ValueError("The Codex host binds one Scope per job and cannot run batched acceptance workloads")  # noqa: TRY003
+        # The plugin reads its Server URL only from the installed .mcp.json, so the harness writes it there.
+        if (server_url := _codex_server_url()) is None:
+            raise ValueError("POWERCONTEXT_CODEX_SERVER_URL must name the Server as the agent container reaches it")  # noqa: TRY003
+        env = {} if scope_id is None else {**powercontext_codex_environment(), "POWERCONTEXT_CODEX_SCOPE_ID": scope_id}
+        return AgentConfig(
+            import_path="powercontext_e2e.harbor_codex:PowerContextCodexAgent",
+            model_name=self.agent_model(),
+            env=env,
+            kwargs={
+                "powercontext": scope_id is not None,
+                "server_url": server_url,
+                **self.agent_settings(),
+            },
+        )
+
+
+def _codex_server_url() -> str | None:
+    return powercontext_codex_environment().get("POWERCONTEXT_CODEX_SERVER_URL")
+
+
 def _capture_settings(task: E2ETask) -> tuple[bool, int, int]:
     evaluation = task.evaluation
     if isinstance(evaluation, MemoryEvaluationSpec):
@@ -144,10 +219,10 @@ def read_only_bind(source: Path, target: str) -> ServiceVolumeConfig:
     }
 
 
-_HOSTS: dict[str, HostAdapter] = {"bub": BubHost()}
+_HOSTS: dict[str, HostAdapter] = {host.name: host for host in (BubHost(), CodexHost())}
 
 
-def host_adapter(task: E2ETask) -> HostAdapter:
-    """Return the adapter for the host a workload declares in its execution spec."""
+def host_adapter(name: str) -> HostAdapter:
+    """Return the adapter for a host by name."""
 
-    return _HOSTS[task.execution.type]
+    return _HOSTS[name]

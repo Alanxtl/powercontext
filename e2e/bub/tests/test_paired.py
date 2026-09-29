@@ -29,7 +29,13 @@ from harbor.models.trial.result import StepResult
 from harbor.models.verifier.result import VerifierResult
 
 from powercontext_e2e.catalog import load_tasks
-from powercontext_e2e.models import HarborTrialObservation, PairedArmObservation, RunEnvironment, SessionSnapshot
+from powercontext_e2e.models import (
+    HarborTrialObservation,
+    PairedAgent,
+    PairedArmObservation,
+    RunEnvironment,
+    SessionSnapshot,
+)
 from powercontext_e2e.paired import (
     arm_outcome,
     classify_outcome,
@@ -227,6 +233,9 @@ def _observation(trial: int, arm: str, outcome: str, task_id: str = "task") -> P
     )
 
 
+_AGENT = PairedAgent(host="bub", version="0", model="provider:model")
+
+
 def test_summary_pairs_only_trials_where_both_arms_were_scored() -> None:
     report = summarize(
         (
@@ -238,6 +247,7 @@ def test_summary_pairs_only_trials_where_both_arms_were_scored() -> None:
             _observation(3, "on", "passed"),
         ),
         trials=3,
+        agent=_AGENT,
     )
 
     (task,) = report.tasks
@@ -249,7 +259,7 @@ def test_summary_pairs_only_trials_where_both_arms_were_scored() -> None:
 
 
 def test_summary_reports_no_difference_without_a_scored_pair() -> None:
-    report = summarize((_observation(1, "off", "error"), _observation(1, "on", "passed")), trials=1)
+    report = summarize((_observation(1, "off", "error"), _observation(1, "on", "passed")), trials=1, agent=_AGENT)
 
     assert report.total.pairs == 0
     assert report.total.mean_delta is None

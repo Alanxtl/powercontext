@@ -5,8 +5,8 @@ benchmark suite. The Terminal-Bench case retains its native task and verifier, w
 on Memory collection, grounding, and recall rather than the native task reward.
 
 The common architecture separates workload selection, execution, evidence, Memory evaluation, and reporting. Bub is
-the current execution adapter because its model, tools, context injection, capture, and checkpoints are observable.
-Another adapter can be added later without changing the common workload or evaluation contracts.
+the execution adapter for acceptance workloads because its model, tools, context injection, capture, and checkpoints
+are observable. The OFF/ON comparison can also run on Codex, without changing the workload or evaluation contracts.
 
 Every workload follows one execution path:
 
@@ -152,13 +152,17 @@ strategy; earlier steps' rewards are recorded for diagnosis only. A task may not
 step, because Harbor would then skip the recall step when that step's unrelated job falls short.
 
 The `paired` command runs each selected workload with PowerContext off and on, in separate containers, and repeats
-this for `--trials` trials. The arm that runs first alternates between trials.
+this for `--trials` trials. The arm that runs first alternates between trials. `--host` selects the agent host for
+both arms, `bub` by default or `codex`; each host uses its own PowerContext integration, so ON means what that
+integration does for its users.
 
-- OFF installs the host without its PowerContext integration and passes no `POWERCONTEXT_*` settings.
-- ON installs the integration bound to a new Scope. For Bub this means the plugin with `capture_events` enabled, so
-  that, like the other host integrations, it captures what the user says without relying on the model to call a
-  memory tool. This is not the plugin's default setting.
-- Everything else is the same in both arms: image, host version, model, and budget.
+- OFF passes no `POWERCONTEXT_*` settings to the agent. Bub is installed without its PowerContext plugin. Codex has
+  the PowerContext plugin installed but runs with `--disable plugins`, as in the published SWE-bench Pro protocol.
+- ON binds the integration to a new Scope. For Bub this means the plugin with `capture_events` enabled, so that, like
+  the other host integrations, it captures what the user says without relying on the model to call a memory tool.
+  This is not the plugin's default setting. Codex runs with `--enable plugins`: its hooks capture each user prompt and
+  ask for context before each turn, and the plugin's MCP tools are available to the model.
+- Everything else is the same in both arms: image, host version, model, reasoning settings, and budget.
 
 After each ON session the harness records the Scope's Server statistics. When another session follows, it first
 flushes the Scope, standing in for the time that passes between real sessions, and repeats the flush until the Scope
@@ -190,6 +194,24 @@ export BUB_API_KEY="$OPENROUTER_API_KEY"
 make harness-paired ARGS='--trials 2'
 ```
 
+Codex 0.153.4 runs through Harbor's Codex agent. The plugin reads its Server URL only from its installed
+`.mcp.json`, so the harness writes `POWERCONTEXT_CODEX_SERVER_URL` there before each session, as
+`powercontext setup codex --server-url` does; other `POWERCONTEXT_CODEX_*` settings reach the ON arm unchanged. The
+harness selects the model with `POWERCONTEXT_E2E_CODEX_MODEL` and the reasoning effort with
+`POWERCONTEXT_E2E_CODEX_REASONING_EFFORT`, which defaults to `medium`. Harbor authenticates Codex with
+`OPENAI_API_KEY`, the auth document named by `CODEX_AUTH_JSON_PATH`, or `~/.codex/auth.json` when
+`CODEX_FORCE_AUTH_JSON=1`. A ChatGPT login can use the models that Codex 0.153.4 offers to ChatGPT accounts.
+
+```bash
+export POWERCONTEXT_CLIENT_SERVER_URL=http://127.0.0.1:8000
+export POWERCONTEXT_CLIENT_TIMEOUT=150
+export POWERCONTEXT_CODEX_SERVER_URL=http://host-gateway:8000
+export POWERCONTEXT_CODEX_ALLOW_INSECURE_HTTP=true
+export POWERCONTEXT_E2E_CODEX_MODEL=gpt-5.6-sol
+export CODEX_FORCE_AUTH_JSON=1
+make harness-paired ARGS='--host codex --trials 2'
+```
+
 Each arm writes `observation.json`, which includes the per-session Server snapshots for ON, and its Harbor jobs:
 
 ```text
@@ -201,8 +223,9 @@ Each arm writes `observation.json`, which includes the per-session Server snapsh
     harbor-jobs/
 ```
 
-The command exits non-zero when any arm could not be scored; a task that fails in either arm is a result, not a
-command failure. The report is marked preliminary. It does not yet estimate uncertainty, check the Default Scope for
+The report states the host, its version, the model, and the reasoning settings. The command exits non-zero when any
+arm could not be scored; a task that fails in either arm is a result, not a command failure. The report is marked
+preliminary. It does not yet estimate uncertainty, check the Default Scope for
 leaks, record latency or token usage, or run in the fixed Compose harness.
 
 ## Long-horizon task

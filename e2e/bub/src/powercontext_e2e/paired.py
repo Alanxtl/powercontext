@@ -26,11 +26,13 @@ from powercontext.http import CreateScopeRequest
 
 from .catalog import ContinuationEvaluationSpec, E2ETask
 from .evidence import redact, write_evidence
+from .hosts import HostAdapter, host_adapter
 from .models import (
     Arm,
     ArmOutcome,
     ArmSummary,
     HarborTrialObservation,
+    PairedAgent,
     PairedArmObservation,
     PairedReport,
     PairedSummary,
@@ -73,14 +75,19 @@ async def run_paired(
     output_dir: Path,
     settings: HarnessSettings,
     trials: int,
+    host: str = "bub",
 ) -> PairedReport:
-    """Run every task ``trials`` times per arm, alternating which arm goes first, and write the paired report."""
+    """Run every task ``trials`` times per arm on ``host``, alternating which arm goes first, and write the report.
+
+    Continuation workloads are host-neutral, so the host is chosen for the run rather than by each manifest.
+    """
 
     if not tasks or trials < 1:
         raise ValueError("At least one continuation workload and one trial are required")  # noqa: TRY003
+    adapter = host_adapter(host)
     recall_sessions = {task.id: recall_session_index(task, settings) for task in tasks}
     recall_steps = {task.id: _continuation(task).recall_step for task in tasks}
-    require_runtime_models(tasks)
+    require_runtime_models(tasks, adapter)
 
     observations: list[PairedArmObservation] = []
     async with _powercontext_client() as client:
@@ -95,6 +102,7 @@ async def run_paired(
                     observation = await _run_arm(
                         client,
                         task,
+                        host=adapter,
                         trial=trial,
                         arm=arm,
                         position=position,
@@ -110,10 +118,19 @@ async def run_paired(
                     )
                     observations.append(observation)
 
-    report = summarize(observations, trials=trials)
+    report = summarize(observations, trials=trials, agent=_paired_agent(adapter))
     write_evidence(output_dir / "paired-report.json", report.model_dump_json(by_alias=True, indent=2) + "\n", settings)
     write_evidence(output_dir / "report.md", render_paired_report(report), settings)
     return report
+
+
+def _paired_agent(host: HostAdapter) -> PairedAgent:
+    return PairedAgent(
+        host=host.name,
+        version=host.version,
+        model=host.agent_model(),
+        settings=host.agent_settings(),
+    )
 
 
 def recall_session_index(task: E2ETask, settings: HarnessSettings) -> int:
@@ -145,6 +162,7 @@ async def _run_arm(
     client: PowerContextClient,
     task: E2ETask,
     *,
+    host: HostAdapter,
     trial: int,
     arm: Arm,
     position: int,
@@ -172,7 +190,7 @@ async def _run_arm(
                     )
                 )
             ).scope_id
-        job = await Job.create(_job_config(task, run_id, scope_id, output_dir, settings))
+        job = await Job.create(_job_config(task, run_id, scope_id, output_dir, settings, host=host))
         if scope_id is not None:
             recorder = SessionRecorder(client, scope_id, final_session=recall_session)
             job.on_agent_ended(recorder)
@@ -195,7 +213,7 @@ async def _run_arm(
         trial=trial,
         arm=arm,
         position=position,
-        environment=_run_environment(task, started_at, settings),
+        environment=_run_environment(task, started_at, settings, host),
         scope_id=scope_id,
         harbor=harbor,
         step_rewards=step_rewards(step_results),
@@ -300,10 +318,11 @@ def classify_outcome(
     return "passed" if reward is not None and reward >= 1 else "failed"
 
 
-def summarize(observations: Sequence[PairedArmObservation], *, trials: int) -> PairedReport:
+def summarize(observations: Sequence[PairedArmObservation], *, trials: int, agent: PairedAgent) -> PairedReport:
     task_ids = tuple(dict.fromkeys(observation.task_id for observation in observations))
     return PairedReport(
-        experiment="e2e:paired:" + ",".join(task_ids),
+        experiment=f"e2e:paired:{agent.host}:" + ",".join(task_ids),
+        agent=agent,
         trials=trials,
         tasks=tuple(
             PairedTaskSummary(
