@@ -19,7 +19,7 @@ notebooks-test: ## Execute provider-free tutorials in fresh kernels; use ARGS fo
 	@uv run --locked --group notebooks python examples/jupyter/run.py $(ARGS)
 
 .PHONY: check
-check: workflow-actions-check integration-manifest-check ## Run code quality tools.
+check: version-check workflow-actions-check integration-manifest-check ## Run code quality tools.
 
 .PHONY: workflow-actions-check
 workflow-actions-check: ## Verify third-party GitHub Actions use immutable commit pins.
@@ -189,6 +189,25 @@ pi-test: ## Install and test the Pi package.
 build: clean-build ## Build wheel file
 	@echo "🚀 Creating wheel file"
 	@uv build
+
+# Export rather than interpolate VERSION into shell commands.
+export VERSION
+
+.PHONY: version-bump
+version-bump: ## Synchronize release references: make version-bump VERSION=X.Y.Z (does not tag or publish).
+	@uv run python scripts/release_version.py --write
+	@$(MAKE) api-generate
+	@$(MAKE) version-check
+	@echo "Before publishing a stable release, add its website release notes and run make release-check."
+
+.PHONY: version-check
+version-check: ## Check release references and generated API code; optionally assert VERSION=X.Y.Z or a release tag.
+	@uv run python scripts/release_version.py --check
+	@$(MAKE) api-generate-check js-api-generate-check
+
+.PHONY: release-check
+release-check: version-check docs-install ## Check version references and require matching bilingual notes for a stable release.
+	@cd website && node --import tsx --test tests/releases.test.ts
 
 .PHONY: clean-build
 clean-build: ## Clean build artifacts
