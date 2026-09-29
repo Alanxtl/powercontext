@@ -3360,7 +3360,7 @@ work when PowerContext is unavailable; do not repeatedly retry failed operations
 //#region src/skill.ts
 const GUIDANCE = `PowerContext model-facing capabilities are exposed through DSH's native MCP client.
 The plugin connects the configured Server MCP endpoint and the resulting tools use the exact names
-mcp__powercontext__<operation>. Do not look for or invent pc_* HTTP tools. Check that an exact MCP name
+mcp__powercontext__<operation>. Check that an exact MCP name
 appears in the current tool catalog before selecting it; if it is absent, report that workflow unavailable.
 The host and Server resolve the current Scope. Never invent a Scope or change bindings to find missing history.
 For MCP operations that require scope_id, call mcp__powercontext__resolve_scope_binding with allow_default: true
