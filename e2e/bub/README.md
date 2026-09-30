@@ -6,7 +6,8 @@ on Memory collection, grounding, and recall rather than the native task reward.
 
 The common architecture separates workload selection, execution, evidence, Memory evaluation, and reporting. Bub is
 the execution adapter for acceptance workloads because its model, tools, context injection, capture, and checkpoints
-are observable. The OFF/ON comparison can also run on Codex, without changing the workload or evaluation contracts.
+are observable. The OFF/ON comparison can also run on Codex and Claude Code, without changing the workload or
+evaluation contracts.
 
 Every workload follows one execution path:
 
@@ -153,15 +154,17 @@ step, because Harbor would then skip the recall step when that step's unrelated 
 
 The `paired` command runs each selected workload with PowerContext off and on, in separate containers, and repeats
 this for `--trials` trials. The arm that runs first alternates between trials. `--host` selects the agent host for
-both arms, `bub` by default or `codex`; each host uses its own PowerContext integration, so ON means what that
-integration does for its users.
+both arms: `bub` by default, `codex`, or `claude-code`. Each host uses its own PowerContext integration, so ON means
+what that integration does for its users.
 
 - OFF passes no `POWERCONTEXT_*` settings to the agent. Bub is installed without its PowerContext plugin. Codex has
   the PowerContext plugin installed but runs with `--disable plugins`, as in the published SWE-bench Pro protocol.
+  Claude Code has the plugin installed and then disabled with `claude plugin disable`.
 - ON binds the integration to a new Scope. For Bub this means the plugin with `capture_events` enabled, so that, like
   the other host integrations, it captures what the user says without relying on the model to call a memory tool.
-  This is not the plugin's default setting. Codex runs with `--enable plugins`: its hooks capture each user prompt and
-  ask for context before each turn, and the plugin's MCP tools are available to the model.
+  This is not the plugin's default setting. Codex runs with `--enable plugins`, and Claude Code keeps the plugin
+  enabled: in both, a hook captures each user prompt and asks for context before each turn, and the plugin's MCP
+  tools and Skill are available to the model.
 - Everything else is the same in both arms: image, host version, model, reasoning settings, and budget.
 
 After each ON session the harness records the Scope's Server statistics. When another session follows, it first
@@ -210,6 +213,29 @@ export POWERCONTEXT_CODEX_ALLOW_INSECURE_HTTP=true
 export POWERCONTEXT_E2E_CODEX_MODEL=gpt-5.6-sol
 export CODEX_FORCE_AUTH_JSON=1
 make harness-paired ARGS='--host codex --trials 2'
+```
+
+Claude Code 2.1.284 runs through Harbor's Claude Code agent. The agent container sees only the plugin's marketplace
+manifest, `.claude-plugin/marketplace.json`, and `integrations/claude-code`. Before each session the harness installs
+the plugin with its `server_url` option set to `POWERCONTEXT_CLAUDE_SERVER_URL`, because the plugin's MCP connection
+reads only that option. The plugin's hook reads `POWERCONTEXT_CLAUDE_SERVER_URL` itself, and other
+`POWERCONTEXT_CLAUDE_*` settings reach the ON arm unchanged. Without `POWERCONTEXT_CLAUDE_ALLOW_INSECURE_HTTP=true`,
+the hook skips a plain-HTTP Server such as `host-gateway`, and the ON arm reports an integration failure. The harness
+selects the model with `POWERCONTEXT_E2E_CLAUDE_CODE_MODEL` and the effort with
+`POWERCONTEXT_E2E_CLAUDE_CODE_REASONING_EFFORT`, which defaults to `medium`. Harbor authenticates Claude Code with
+`CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`), `ANTHROPIC_API_KEY`, or `ANTHROPIC_AUTH_TOKEN`. When an API key
+and the OAuth token are both set, it uses the API key unless `CLAUDE_FORCE_OAUTH=1`. Harbor also forwards
+`ANTHROPIC_BASE_URL` from the harness environment, so unset it unless the agent should use that endpoint.
+
+```bash
+export POWERCONTEXT_CLIENT_SERVER_URL=http://127.0.0.1:8000
+export POWERCONTEXT_CLIENT_TIMEOUT=150
+export POWERCONTEXT_CLAUDE_SERVER_URL=http://host-gateway:8000
+export POWERCONTEXT_CLAUDE_ALLOW_INSECURE_HTTP=true
+export POWERCONTEXT_E2E_CLAUDE_CODE_MODEL=claude-sonnet-5-5
+export CLAUDE_CODE_OAUTH_TOKEN=replace-me
+export CLAUDE_FORCE_OAUTH=1
+make harness-paired ARGS='--host claude-code --trials 2'
 ```
 
 Each arm writes `observation.json`, which includes the per-session Server snapshots for ON, and its Harbor jobs:

@@ -41,10 +41,10 @@ def powercontext_bub_environment() -> dict[str, str]:
     return {name: value for name, value in environ.items() if name.startswith("POWERCONTEXT_BUB_") and value}
 
 
-def powercontext_codex_environment() -> dict[str, str]:
-    """Return the PowerContext Codex plugin's native environment."""
+def prefixed_environment(prefix: str) -> dict[str, str]:
+    """Return a host integration's native settings that start with ``prefix``, without translating them."""
 
-    return {name: value for name, value in environ.items() if name.startswith("POWERCONTEXT_CODEX_") and value}
+    return {name: value for name, value in environ.items() if name.startswith(prefix) and value}
 
 
 def codex_auth_path() -> Path:
@@ -104,7 +104,16 @@ class HarnessSettings(BaseSettings):
             for name in environ
             if name == "BUB_API_KEY"
             or (name.startswith("BUB_") and name.endswith("_API_KEY"))
-            or name in {"POWERCONTEXT_CLIENT_API_TOKEN", "POWERCONTEXT_CODEX_AUTHORIZATION", "OPENAI_API_KEY"}
+            or name
+            in {
+                "ANTHROPIC_API_KEY",
+                "ANTHROPIC_AUTH_TOKEN",
+                "CLAUDE_CODE_OAUTH_TOKEN",
+                "OPENAI_API_KEY",
+                "POWERCONTEXT_CLAUDE_AUTHORIZATION",
+                "POWERCONTEXT_CLIENT_API_TOKEN",
+                "POWERCONTEXT_CODEX_AUTHORIZATION",
+            }
         }
         values = {environ[name] for name in secret_names if environ[name]}
         if self.agent_proxy_url is not None and (proxy_url := self.agent_proxy_url.get_secret_value()):

@@ -19,11 +19,13 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 from harbor.models.job.config import JobConfig
 
 from powercontext_e2e.catalog import E2ETask, load_tasks
+from powercontext_e2e.harbor_claude_code import install_plugin_command as claude_code_install_plugin_command
 from powercontext_e2e.harbor_codex import PowerContextCodexAgent
 from powercontext_e2e.hosts import host_adapter
 from powercontext_e2e.runner import _job_config, prepare_runtime_task, require_runtime_models, run_tasks
@@ -189,25 +191,54 @@ def test_off_arm_runs_the_host_without_powercontext(monkeypatch, tmp_path: Path)
     assert on_agent.kwargs == {}
 
 
-def _codex_config(tmp_path: Path, scope_id: str | None) -> JobConfig:
+class _PluginHost(NamedTuple):
+    name: str
+    model: str
+    server_url: str
+    insecure_http: str
+    scope_id: str
+
+
+_PLUGIN_HOSTS = [
+    _PluginHost(
+        "codex",
+        "POWERCONTEXT_E2E_CODEX_MODEL",
+        "POWERCONTEXT_CODEX_SERVER_URL",
+        "POWERCONTEXT_CODEX_ALLOW_INSECURE_HTTP",
+        "POWERCONTEXT_CODEX_SCOPE_ID",
+    ),
+    _PluginHost(
+        "claude-code",
+        "POWERCONTEXT_E2E_CLAUDE_CODE_MODEL",
+        "POWERCONTEXT_CLAUDE_SERVER_URL",
+        "POWERCONTEXT_CLAUDE_ALLOW_INSECURE_HTTP",
+        "POWERCONTEXT_CLAUDE_SCOPE_ID",
+    ),
+]
+
+
+def _paired_config(tmp_path: Path, host: str, scope_id: str | None) -> JobConfig:
     settings = HarnessSettings(repository=_REPOSITORY)
     output_dir = tmp_path / (scope_id or "off")
-    return _job_config(_PAIRED_TASK, "run-1", scope_id, output_dir, settings, host=host_adapter("codex"))
+    return _job_config(_PAIRED_TASK, "run-1", scope_id, output_dir, settings, host=host_adapter(host))
 
 
-def test_codex_arms_share_one_installation_and_differ_only_in_the_plugin_switch(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("POWERCONTEXT_E2E_CODEX_MODEL", "gpt-test")
-    monkeypatch.setenv("POWERCONTEXT_CODEX_SERVER_URL", "http://host-gateway:8000")
-    monkeypatch.setenv("POWERCONTEXT_CODEX_ALLOW_INSECURE_HTTP", "true")
-    monkeypatch.setenv("POWERCONTEXT_CODEX_SCOPE_ID", "host-scope")
+@pytest.mark.parametrize("host", _PLUGIN_HOSTS, ids=lambda host: host.name)
+def test_plugin_host_arms_share_one_installation_and_differ_only_in_the_plugin_switch(
+    monkeypatch, tmp_path: Path, host: _PluginHost
+) -> None:
+    monkeypatch.setenv(host.model, "model-test")
+    monkeypatch.setenv(host.server_url, "http://host-gateway:8000")
+    monkeypatch.setenv(host.insecure_http, "true")
+    monkeypatch.setenv(host.scope_id, "host-scope")
 
-    off, on = _codex_config(tmp_path, None), _codex_config(tmp_path, "scope-1")
+    off, on = _paired_config(tmp_path, host.name, None), _paired_config(tmp_path, host.name, "scope-1")
 
     (off_agent,) = off.agents
     (on_agent,) = on.agents
     assert off.environment.mounts == on.environment.mounts
     assert off_agent.import_path == on_agent.import_path
-    assert off_agent.model_name == on_agent.model_name == "gpt-test"
+    assert off_agent.model_name == on_agent.model_name == "model-test"
     assert on_agent.kwargs == {
         "powercontext": True,
         "server_url": "http://host-gateway:8000",
@@ -215,8 +246,8 @@ def test_codex_arms_share_one_installation_and_differ_only_in_the_plugin_switch(
     }
     assert off_agent.kwargs == {**on_agent.kwargs, "powercontext": False}
     assert off_agent.env == {}
-    assert on_agent.env["POWERCONTEXT_CODEX_SCOPE_ID"] == "scope-1"
-    assert on_agent.env["POWERCONTEXT_CODEX_ALLOW_INSECURE_HTTP"] == "true"
+    assert on_agent.env[host.scope_id] == "scope-1"
+    assert on_agent.env[host.insecure_http] == "true"
 
 
 @pytest.mark.parametrize(("powercontext", "switch"), [(True, "--enable plugins"), (False, "--disable plugins")])
@@ -234,25 +265,36 @@ def test_codex_arm_switches_plugins_and_runs_hooks_unattended(tmp_path: Path, po
     assert "--dangerously-bypass-hook-trust" in flags
 
 
-def test_codex_requires_a_model_and_the_server_url_before_any_run(monkeypatch) -> None:
-    codex = host_adapter("codex")
+@pytest.mark.parametrize("enabled", [True, False])
+def test_claude_code_arm_installs_the_plugin_and_disables_it_only_for_off(enabled: bool) -> None:
+    command = claude_code_install_plugin_command("http://host-gateway:8000/", enabled=enabled)
 
-    with pytest.raises(ModelNotConfiguredError, match="POWERCONTEXT_E2E_CODEX_MODEL, POWERCONTEXT_CODEX_SERVER_URL"):
-        require_runtime_models((_PAIRED_TASK,), codex)
-
-    monkeypatch.setenv("POWERCONTEXT_E2E_CODEX_MODEL", "gpt-test")
-    monkeypatch.setenv("POWERCONTEXT_CODEX_SERVER_URL", "http://host-gateway:8000")
-    require_runtime_models((_PAIRED_TASK,), codex)
+    assert "claude plugin install powercontext@powercontext" in command
+    assert "server_url=http://host-gateway:8000 " in command
+    assert ("claude plugin disable powercontext@powercontext" in command) is not enabled
 
 
-@pytest.mark.parametrize("host", ["bub", "codex"])
+@pytest.mark.parametrize("host", _PLUGIN_HOSTS, ids=lambda host: host.name)
+def test_plugin_host_requires_a_model_and_the_server_url_before_any_run(monkeypatch, host: _PluginHost) -> None:
+    adapter = host_adapter(host.name)
+
+    with pytest.raises(ModelNotConfiguredError, match=f"{host.model}, {host.server_url}"):
+        require_runtime_models((_PAIRED_TASK,), adapter)
+
+    monkeypatch.setenv(host.model, "model-test")
+    monkeypatch.setenv(host.server_url, "http://host-gateway:8000")
+    require_runtime_models((_PAIRED_TASK,), adapter)
+
+
+@pytest.mark.parametrize("host", ["bub", "codex", "claude-code"])
 @pytest.mark.parametrize(
     "manifest",
     ["paired-tasks/project-decision-continuation.yaml", "tasks/acceptance-01-project-database-decision.yaml"],
 )
 def test_agent_container_cannot_read_workload_answers(monkeypatch, tmp_path: Path, manifest: str, host: str) -> None:
     # The agent can search its container, so no mount may expose task files, answer keys, or benchmark data.
-    monkeypatch.setenv("POWERCONTEXT_CODEX_SERVER_URL", "http://host-gateway:8000")
+    for plugin_host in _PLUGIN_HOSTS:
+        monkeypatch.setenv(plugin_host.server_url, "http://host-gateway:8000")
     task = load_tasks(_REPOSITORY / "e2e" / "bub" / manifest)[0]
     protected = [_REPOSITORY / "e2e" / "bub" / name for name in ("harbor-tasks", "paired-tasks", "tasks")]
     protected.append(_REPOSITORY / "benchmark")

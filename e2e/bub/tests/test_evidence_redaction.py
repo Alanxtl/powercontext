@@ -56,7 +56,17 @@ def test_resolved_instruction_evidence_matches_harbor_acp_summaries(
     assert resolved[0].sha256 == sha256(instruction.encode()).hexdigest()
 
 
-@pytest.mark.parametrize("secret_name", ["BUB_API_KEY", "OPENAI_API_KEY", "POWERCONTEXT_CODEX_AUTHORIZATION"])
+@pytest.mark.parametrize(
+    "secret_name",
+    [
+        "BUB_API_KEY",
+        "OPENAI_API_KEY",
+        "POWERCONTEXT_CODEX_AUTHORIZATION",
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "ANTHROPIC_API_KEY",
+        "POWERCONTEXT_CLAUDE_AUTHORIZATION",
+    ],
+)
 def test_final_evidence_redacts_configured_secrets_and_preserves_the_public_schema(
     monkeypatch,
     tmp_path: Path,
