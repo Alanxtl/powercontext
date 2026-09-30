@@ -409,3 +409,18 @@ powercontext doctor
 Server。召回会正常降级，并在 Server 不可用、重定向、超时或返回无效 PreparedContext 时通过宿主终端输出无内容
 warning；Pi 会继续运行且不添加上下文。恢复 Server 后，运行 `powercontext capabilities`，确认 Context versions 中包含
 `powercontext.prepared-context.v1`。
+
+## MySQL 驱动兼容性与 Source 二进制写入
+
+在使用 aiomysql 0.3.2 时，内置依赖将 PyMySQL 限制为 `>=1.2,<1.2.1`，同时覆盖 OceanBase 和内嵌 seekdb。
+PyMySQL 1.2.1、1.2.2 会导致 aiomysql 导入失败；1.2.3 虽然能够导入，但编码 bytes 时仍会失败，
+包括 Source 持久化载荷。请重新安装或同步完整的 PowerContext 依赖集，不要单独升级 PyMySQL。
+`database: ready` 探针执行的是 `SELECT 1`，不验证二进制写入或写权限。
+
+这是一项临时兼容约束，不是通用的 PyMySQL 降级建议。
+[PyMySQL 1.2.1](https://github.com/PyMySQL/PyMySQL/blob/main/CHANGELOG.md) 修复了 bytes 和使用 surrogateescape
+解码的字符串在 big5、gbk、sjis、cp932、gb18030 字符集下的 SQL 注入问题。PowerContext 要求 OceanBase
+使用 `charset=utf8mb4`，并固定以 `utf8mb4` 创建 seekdb 连接，因此这两种受支持的配置不会选择上述旧字符集。
+此评估不覆盖自定义连接、会话字符集变更或共用环境中的其他应用，也不代表旧驱动不存在其他漏洞。
+请使用隔离环境并保留要求的字符集。解除版本限制前，需要异步驱动适配新的二进制编码，并在两种后端上通过
+Source 写入、读取和幂等重放测试。

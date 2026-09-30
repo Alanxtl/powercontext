@@ -432,3 +432,21 @@ Restart Pi after installing the package or changing `POWERCONTEXT_PI_*` variable
 warning when the Server is unavailable, redirects, times out, or returns an invalid PreparedContext; Pi continues
 without adding context. Restore the Server, then run `powercontext capabilities` and confirm that Context versions lists
 `powercontext.prepared-context.v1`.
+
+## MySQL driver compatibility and binary Source writes
+
+The built-in dependencies constrain PyMySQL to `>=1.2,<1.2.1` while aiomysql 0.3.2 is in use.
+This applies to both OceanBase and embedded seekdb. PyMySQL 1.2.1 and 1.2.2 break aiomysql imports;
+1.2.3 imports successfully but fails when aiomysql encodes bytes, including stored Source payloads.
+Reinstall or synchronize the complete PowerContext dependency set instead of upgrading PyMySQL independently.
+The `database: ready` probe runs `SELECT 1`; it does not verify binary writes or write permissions.
+
+This is a temporary compatibility restriction, not a general recommendation to downgrade PyMySQL.
+[PyMySQL 1.2.1](https://github.com/PyMySQL/PyMySQL/blob/main/CHANGELOG.md) fixes SQL injection involving
+bytes and surrogate-escaped strings with big5, gbk, sjis, cp932, and gb18030. PowerContext requires
+`charset=utf8mb4` for OceanBase and constructs seekdb connections with `utf8mb4`, so these supported
+profiles do not select the affected legacy character sets. This assessment does not cover custom
+connections, session charset changes, or other applications sharing the environment, and is not a
+claim that the older driver is free of other vulnerabilities. Use an isolated environment and retain
+the required charset. Remove this restriction only after the async driver supports the updated
+binary encoding and Source write/read/replay tests pass against both backends.
