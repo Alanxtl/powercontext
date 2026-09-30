@@ -728,6 +728,9 @@ class RelationalContexts:
         self._source_locks.pop(scope, None)
         self._activation_locks.pop(scope, None)
         self._experience_locks.pop(scope, None)
+        for key in tuple(self._skill_publication_locks):
+            if key[0] == scope:
+                self._skill_publication_locks.pop(key, None)
 
     def review(self, scope_id: str, /) -> ReviewService:
         """Return Candidate and reviewed Artifact operations bound to one scope."""
