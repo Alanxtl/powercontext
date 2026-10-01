@@ -294,8 +294,9 @@ evidence is written.
 The agent container sees only the repository files that installation needs: the `powercontext` package and the host
 integration. Workload files, answer keys, and benchmark data stay on the host, because the agent can search its
 container. Agent setup uses Bub's supported installation path: `uv tool install` installs Bub with the local
-PowerContext plugin, then `bub install bub-acp-server` adds the ACP server to the same environment. Harbor uploads and
-runs its native ACP client. The Terminal-Bench task keeps its original image, setup, verifier, and isolation boundary.
+PowerContext plugin when enabled, then `bub install` adds the ACP server to the same environment. Both steps pin Bub to
+the harness version so installing ACP cannot upgrade the host. Harbor uploads and runs its native ACP client. The
+Terminal-Bench task keeps its original image, setup, verifier, and isolation boundary.
 The harness ignores dataset CPU and memory limits because it evaluates Memory behavior rather than benchmark resource
 compliance. This also keeps the fixed harness usable in nested container runtimes that cannot create additional
 cgroups.
