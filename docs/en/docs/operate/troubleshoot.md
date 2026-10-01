@@ -267,7 +267,7 @@ so the previous database remains available for recovery:
 
    ```bash
    obloader <connection-options> -D <new-database> --csv \
-      --table 'pc_scopes,pc_source_journal_heads,pc_sources,pc_artifacts,pc_source_cursors,pc_artifact_processing_leases,pc_artifact_processing_binding_states,pc_artifact_processing_pending,pc_artifact_processing_auto_wave_targets,pc_artifact_processing_sequences,pc_artifact_processing_intents,pc_topic_memory_processing_targets,pc_artifact_processing_schema,pc_artifact_processing_migration_receipts,pc_topic_memory_work_budgets,pc_topic_memory_retrieval_shape,pc_connector_checkpoints,pc_source_definition_manifests,pc_external_skill_registrations,pc_skill_packages,pc_agent_skill_targets,pc_skill_publications,pc_model_usage_daily,pc_recall_token_daily,pc_receipt_migration_review' \
+      --table 'pc_scopes,pc_source_journal_heads,pc_sources,pc_artifacts,pc_source_cursors,pc_memory_source_windows,pc_artifact_processing_leases,pc_artifact_processing_binding_states,pc_artifact_processing_pending,pc_artifact_processing_auto_wave_targets,pc_artifact_processing_sequences,pc_artifact_processing_intents,pc_topic_memory_processing_targets,pc_artifact_processing_schema,pc_artifact_processing_migration_receipts,pc_topic_memory_work_budgets,pc_topic_memory_retrieval_shape,pc_connector_checkpoints,pc_source_definition_manifests,pc_external_skill_registrations,pc_skill_packages,pc_agent_skill_targets,pc_skill_publications,pc_model_usage_daily,pc_recall_token_daily,pc_receipt_migration_review' \
      -f <export-directory>
    ```
 
@@ -450,3 +450,19 @@ connections, session charset changes, or other applications sharing the environm
 claim that the older driver is free of other vulnerabilities. Use an isolated environment and retain
 the required charset. Remove this restriction only after the async driver supports the updated
 binary encoding and Source write/read/replay tests pass against both backends.
+
+## Memory extraction repeatedly times out
+
+A generation timeout leaves the Memory Source cursor unchanged. The Memory processor halves the
+failed journal window for the next attempt, down to one position. The reduced limit is stored per
+Scope and survives Worker replacement and Server restart; it never exceeds `SOURCE_WINDOW_LIMIT`
+or an explicit flush limit. Each invocation makes one extraction attempt, so Supervisor backoff and
+Worker deadlines continue to bound retries. The reduction is retained while consuming the backlog
+visible at the timeout and cleared atomically when that backlog is consumed.
+
+The processor never skips failed Sources or acknowledges a failed invocation. A single Source can
+still time out, and an unavailable provider, embedding failure, or hard Worker termination does not
+trigger this generation-timeout recovery. Other Scopes continue independently. Inspect the
+`memory.window_reduced` log event and the provider error; if one Source still fails, adjust the model
+or generation timeout and retry. Keep the Worker timeout above the model request timeout plus
+startup and commit overhead so the processor can record a reduction before the Worker is stopped.
