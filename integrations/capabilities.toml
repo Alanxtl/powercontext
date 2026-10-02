@@ -87,6 +87,9 @@ capabilities = ["handoff"]
 id = "continue_handoff"
 capabilities = ["handoff"]
 [[toolsets.tools]]
+id = "prepare_handoff_hint"
+capabilities = ["handoff"]
+[[toolsets.tools]]
 id = "get_handoff_report"
 capabilities = ["handoff"]
 [[toolsets.tools]]

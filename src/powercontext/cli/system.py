@@ -65,6 +65,7 @@ _CODEX_FULL_MCP_TOOLS = frozenset({
     "clear_scope_binding",
     "commit_handoff",
     "continue_handoff",
+    "prepare_handoff_hint",
     "create_scope",
     "create_work_contract",
     "finalize_handoff",
