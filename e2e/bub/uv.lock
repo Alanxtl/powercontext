@@ -1647,6 +1647,7 @@ requires-dist = [
     { name = "platformdirs", marker = "extra == 'cli'", specifier = ">=4,<5" },
     { name = "platformdirs", marker = "extra == 'server'", specifier = ">=4,<5" },
     { name = "prometheus-client", marker = "extra == 'server'", specifier = ">=0.21,<1" },
+    { name = "psutil", marker = "sys_platform == 'darwin' and extra == 'code'", specifier = ">=7.2,<8" },
     { name = "pycasbin", marker = "extra == 'server'", specifier = ">=2.8,<3" },
     { name = "pydantic", specifier = ">=2.10,<3" },
     { name = "pydantic-ai-slim", extras = ["anthropic", "openai"], marker = "extra == 'builtin'", specifier = ">=2.27.1,<3" },

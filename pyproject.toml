@@ -38,6 +38,7 @@ classifiers = [
 
 [project.optional-dependencies]
 code = [
+    "psutil>=7.2,<8; sys_platform == 'darwin'",
     "tree-sitter==0.26.0",
     "tree-sitter-go==0.25.0",
     "tree-sitter-javascript==0.25.0",
