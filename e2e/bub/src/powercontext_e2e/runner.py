@@ -432,7 +432,7 @@ def _job_config(
 ) -> JobConfig:
     host = host or host_adapter(task.execution.type)
     repository = settings.repository_path()
-    mounts: list[ServiceVolumeConfig] = host.mounts(task, repository)
+    mounts: list[ServiceVolumeConfig] = host.mounts(task, repository, powercontext=scope_id is not None)
     agent = host.agent_config(
         task,
         scope_id=scope_id,

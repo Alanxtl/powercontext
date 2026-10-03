@@ -25,7 +25,7 @@ import pytest
 from harbor.models.job.config import JobConfig
 
 from powercontext_e2e.catalog import E2ETask, load_tasks
-from powercontext_e2e.harbor_claude_code import install_plugin_command as claude_code_install_plugin_command
+from powercontext_e2e.harbor_claude_code import PowerContextClaudeCodeAgent
 from powercontext_e2e.harbor_codex import PowerContextCodexAgent
 from powercontext_e2e.hosts import host_adapter
 from powercontext_e2e.runner import _job_config, prepare_runtime_task, require_runtime_models, run_tasks
@@ -33,7 +33,7 @@ from powercontext_e2e.settings import HarnessSettings, ModelNotConfiguredError
 
 _REPOSITORY = Path(__file__).resolve().parents[3]
 _TASKS = load_tasks(_REPOSITORY / "e2e" / "bub" / "tasks")
-_CODEX_AUTH_TARGET = "/run/powercontext/codex-auth.json"
+_CODEX_AUTH_TARGET = "/run/agent-auth/codex-auth.json"
 _PAIRED_TASK = load_tasks(_REPOSITORY / "e2e" / "bub" / "paired-tasks" / "project-decision-continuation.yaml")[0]
 
 
@@ -65,6 +65,11 @@ def _mount_targets(config: JobConfig) -> list[str]:
     return [mount["target"] for mount in config.environment.mounts]
 
 
+def _powercontext_mounts(config: JobConfig) -> list[str]:
+    # Any path naming PowerContext is a lead for an OFF agent that searches its container.
+    return [target for target in _mount_targets(config) if "powercontext" in target]
+
+
 def test_non_model_task_disables_bub_model_access(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("BUB_MODEL", "provider:model")
     monkeypatch.setenv("BUB_API_KEY", "host-bub-key")
@@ -86,7 +91,7 @@ def test_non_model_task_disables_bub_model_access(monkeypatch, tmp_path: Path) -
     assert "POWERCONTEXT_BUB_EMPTY" not in env
     assert "POWERCONTEXT_CLIENT_API_TOKEN" not in env
     assert "OPENAI_API_KEY" not in env
-    assert {"server-token", "unrelated-key", "host-bub-key", "host-provider-key"}.isdisjoint(env.values())
+    assert {"unrelated-key", "host-bub-key", "host-provider-key"}.isdisjoint(env.values())
 
 
 def test_model_task_forwards_host_bub_environment(monkeypatch, tmp_path: Path) -> None:
@@ -173,9 +178,14 @@ def test_model_workload_requires_a_runtime_model(tmp_path: Path) -> None:
     assert not output_dir.exists()
 
 
-def test_off_arm_runs_the_host_without_powercontext(monkeypatch, tmp_path: Path) -> None:
+def test_off_arm_runs_the_host_without_powercontext(
+    monkeypatch, isolated_host_environment: Path, tmp_path: Path
+) -> None:
+    # Both arms get the Codex login that authenticates Bub's model, at a path that does not name PowerContext.
+    (isolated_host_environment / "auth.json").write_text("{}", encoding="utf-8")
     monkeypatch.setenv("BUB_MODEL", "provider:model")
     monkeypatch.setenv("POWERCONTEXT_BUB_BASE_URL", "http://host-gateway:8000")
+    monkeypatch.setenv("POWERCONTEXT_CLIENT_API_TOKEN", "server-token")
     task = load_tasks(_REPOSITORY / "e2e" / "bub" / "paired-tasks" / "project-decision-continuation.yaml")[0]
 
     off = _job_config(task, "run-1", None, tmp_path / "off", HarnessSettings(repository=_REPOSITORY))
@@ -184,6 +194,11 @@ def test_off_arm_runs_the_host_without_powercontext(monkeypatch, tmp_path: Path)
     (off_agent,) = off.agents
     (on_agent,) = on.agents
     assert not [name for name in off_agent.env if name.startswith("POWERCONTEXT_")]
+    assert "server-token" not in off_agent.env.values()
+    assert _mount_targets(off) == [_CODEX_AUTH_TARGET]
+    assert not _powercontext_mounts(off)
+    assert _powercontext_mounts(on)
+    assert on_agent.env["POWERCONTEXT_BUB_API_TOKEN"] == "server-token"  # noqa: S105 - test value
     assert off_agent.kwargs == {"powercontext": False}
     assert off_agent.env["BUB_MODEL"] == on_agent.env["BUB_MODEL"] == "provider:model"
     assert on_agent.env["POWERCONTEXT_BUB_SCOPE_ID"] == "scope-1"
@@ -224,54 +239,59 @@ def _paired_config(tmp_path: Path, host: str, scope_id: str | None) -> JobConfig
 
 
 @pytest.mark.parametrize("host", _PLUGIN_HOSTS, ids=lambda host: host.name)
-def test_plugin_host_arms_share_one_installation_and_differ_only_in_the_plugin_switch(
-    monkeypatch, tmp_path: Path, host: _PluginHost
-) -> None:
+def test_plugin_host_off_arm_has_nothing_of_powercontext(monkeypatch, tmp_path: Path, host: _PluginHost) -> None:
+    # An OFF agent that can find PowerContext files or credentials searches for PowerContext instead of working
+    # like a host without it.
     monkeypatch.setenv(host.model, "model-test")
     monkeypatch.setenv(host.server_url, "http://host-gateway:8000")
     monkeypatch.setenv(host.insecure_http, "true")
     monkeypatch.setenv(host.scope_id, "host-scope")
+    monkeypatch.setenv("POWERCONTEXT_CLIENT_API_TOKEN", "server-token")
 
     off, on = _paired_config(tmp_path, host.name, None), _paired_config(tmp_path, host.name, "scope-1")
 
     (off_agent,) = off.agents
     (on_agent,) = on.agents
-    assert off.environment.mounts == on.environment.mounts
-    assert off_agent.import_path == on_agent.import_path
-    assert off_agent.model_name == on_agent.model_name == "model-test"
-    assert on_agent.kwargs == {
-        "powercontext": True,
-        "server_url": "http://host-gateway:8000",
-        "reasoning_effort": "medium",
-    }
-    assert off_agent.kwargs == {**on_agent.kwargs, "powercontext": False}
+    assert off.environment.mounts == []
+    assert _powercontext_mounts(on)
     assert off_agent.env == {}
     assert on_agent.env[host.scope_id] == "scope-1"
     assert on_agent.env[host.insecure_http] == "true"
+    assert on_agent.env[host.server_url.replace("SERVER_URL", "AUTHORIZATION")] == "Bearer server-token"
+    assert off_agent.import_path == on_agent.import_path
+    assert off_agent.model_name == on_agent.model_name == "model-test"
+    assert off_agent.kwargs == {**on_agent.kwargs, "powercontext": False}
 
 
-@pytest.mark.parametrize(("powercontext", "switch"), [(True, "--enable plugins"), (False, "--disable plugins")])
-def test_codex_arm_switches_plugins_and_runs_hooks_unattended(tmp_path: Path, powercontext: bool, switch: str) -> None:
-    agent = PowerContextCodexAgent(
+@pytest.mark.parametrize("agent_class", [PowerContextCodexAgent, PowerContextClaudeCodeAgent])
+@pytest.mark.parametrize("powercontext", [True, False])
+def test_plugin_agents_install_the_plugin_only_for_on(tmp_path: Path, agent_class: type, powercontext: bool) -> None:
+    agent = agent_class(
         logs_dir=tmp_path,
-        model_name="gpt-test",
+        model_name="model-test",
         server_url="http://host-gateway:8000",
         powercontext=powercontext,
     )
 
-    flags = agent.build_cli_flags()
+    # Both agents set the plugin up before each session, in the command Harbor runs to register MCP servers.
+    setup = agent._build_register_mcp_servers_command() or ""
 
-    assert switch in flags
-    assert "--dangerously-bypass-hook-trust" in flags
+    assert ("plugin" in setup and "powercontext" in setup) is powercontext
 
 
-@pytest.mark.parametrize("enabled", [True, False])
-def test_claude_code_arm_installs_the_plugin_and_disables_it_only_for_off(enabled: bool) -> None:
-    command = claude_code_install_plugin_command("http://host-gateway:8000/", enabled=enabled)
+def test_codex_on_arm_enables_plugins_and_runs_hooks_unattended(tmp_path: Path) -> None:
+    def flags(powercontext: bool) -> str:
+        return PowerContextCodexAgent(
+            logs_dir=tmp_path,
+            model_name="gpt-test",
+            server_url="http://host-gateway:8000",
+            powercontext=powercontext,
+        ).build_cli_flags()
 
-    assert "claude plugin install powercontext@powercontext" in command
-    assert "server_url=http://host-gateway:8000 " in command
-    assert ("claude plugin disable powercontext@powercontext" in command) is not enabled
+    assert "--enable plugins" in flags(True)
+    assert "--dangerously-bypass-hook-trust" in flags(True)
+    assert "plugins" not in flags(False)
+    assert "hook-trust" not in flags(False)
 
 
 @pytest.mark.parametrize("host", _PLUGIN_HOSTS, ids=lambda host: host.name)

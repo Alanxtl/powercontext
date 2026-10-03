@@ -21,6 +21,7 @@ import subprocess
 from os import environ
 from pathlib import Path
 
+from powercontext.client.settings import ClientSettings
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -45,6 +46,13 @@ def prefixed_environment(prefix: str) -> dict[str, str]:
     """Return a host integration's native settings that start with ``prefix``, without translating them."""
 
     return {name: value for name, value in environ.items() if name.startswith(prefix) and value}
+
+
+def server_api_token() -> str | None:
+    """Return the token the harness Client uses, which the ON arm's integration also needs for the same Server."""
+
+    token = ClientSettings().api_token
+    return None if token is None else token.get_secret_value()
 
 
 def codex_auth_path() -> Path:
