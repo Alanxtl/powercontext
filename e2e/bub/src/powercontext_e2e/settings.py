@@ -61,6 +61,13 @@ def codex_auth_path() -> Path:
     return Path(environ.get("CODEX_HOME", Path.home() / ".codex")).expanduser() / "auth.json"
 
 
+_SECRET_SUFFIXES = ("_API_KEY", "_AUTHORIZATION", "_TOKEN", "_SECRET_ACCESS_KEY")
+# Local model servers accept any key, and the placeholders commonly passed to them are ordinary words and numbers.
+# They protect nothing, and redacting them by substring would rewrite the evidence. Any other value is redacted,
+# however short.
+_PLACEHOLDER_CREDENTIALS = frozenset({"1", "true", "none", "null", "empty", "dummy", "ollama", "lm-studio"})
+
+
 class ModelNotConfiguredError(RuntimeError):
     """Report model-backed workloads whose host lacks its runtime model or another required setting."""
 
@@ -107,23 +114,12 @@ class HarnessSettings(BaseSettings):
         return completed.stdout.strip() if completed.returncode == 0 else "unknown"
 
     def evidence_secrets(self) -> tuple[str, ...]:
-        secret_names = {
-            name
-            for name in environ
-            if name == "BUB_API_KEY"
-            or (name.startswith("BUB_") and name.endswith("_API_KEY"))
-            or name
-            in {
-                "ANTHROPIC_API_KEY",
-                "ANTHROPIC_AUTH_TOKEN",
-                "CLAUDE_CODE_OAUTH_TOKEN",
-                "OPENAI_API_KEY",
-                "POWERCONTEXT_CLAUDE_AUTHORIZATION",
-                "POWERCONTEXT_CLIENT_API_TOKEN",
-                "POWERCONTEXT_CODEX_AUTHORIZATION",
-            }
+        # Provider keys and tokens, and the full Authorization headers the host integrations send to the Server.
+        values = {
+            value
+            for name, value in environ.items()
+            if name.endswith(_SECRET_SUFFIXES) and value and value.lower() not in _PLACEHOLDER_CREDENTIALS
         }
-        values = {environ[name] for name in secret_names if environ[name]}
         if self.agent_proxy_url is not None and (proxy_url := self.agent_proxy_url.get_secret_value()):
             values.add(proxy_url)
         return tuple(sorted(values, key=lambda value: (-len(value), value)))
