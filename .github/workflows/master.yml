@@ -65,6 +65,62 @@ jobs:
       - name: Run end-to-end tests
         run: make e2e-test
 
+  evaluation-tests:
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-python-env
+
+      # `evaluation/` is its own uv project with its own `testpaths`, so the root
+      # unit-test job never collected it and the benchmark's own tests were only
+      # ever run by hand. The job starts at the unit subtree because that is the
+      # subtree this change owns; `evaluation/tests/web` and
+      # `evaluation/tests/contract` are already red on `master` for reasons
+      # unrelated to the benchmark, and gating them here would make this check
+      # red before it could report anything.
+      - name: Run the evaluation project unit tests
+        run: |
+          set -o pipefail
+          make evaluation-unit-test 2>&1 | tee evaluation/pytest.log
+
+      # A pull request from a fork cannot read this run's raw job log — the log
+      # endpoint answers `Must have admin rights to Repository` — so a red check
+      # is otherwise an exit code and nothing else. Both the step summary and an
+      # annotation are readable by the contributor, and the annotation is the one
+      # that still says something when the failure happened before the tests ran.
+      - name: Report the failing cases
+        if: failure()
+        run: |
+          {
+            echo "### evaluation unit tests"
+            echo
+            echo '```'
+            uv --version || true
+            python3 -V || true
+            echo '```'
+            echo
+            if grep -qE '^(FAILED|ERROR) ' evaluation/pytest.log; then
+              echo '```'
+              grep -E '^(FAILED|ERROR) ' evaluation/pytest.log
+              echo '```'
+            else
+              echo "No failing case was reported, so the run failed before the tests ran:"
+              echo
+              echo '```'
+              tail -n 40 evaluation/pytest.log
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          detail=$(tail -n 25 evaluation/pytest.log | awk '{gsub(/%/, "%25"); gsub(/\r/, "%0D"); printf "%s%%0A", $0}')
+          echo "::error title=evaluation unit tests failed::${detail}"
+
   code-seekdb:
     timeout-minutes: 20
     runs-on: ubuntu-latest
