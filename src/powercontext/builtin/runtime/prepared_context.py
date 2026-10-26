@@ -286,11 +286,13 @@ class PreparedContextBuilder:
                     if match.group() in terms
                 ]
                 if not matches:
-                    continue
+                    if not any(ord(char) > 127 for char in request.query):
+                        continue
+                    matches = [re.match(r"", hit.text)]
                 windows: list[tuple[int, int]] = []
                 for match in matches:
-                    start = max(0, match.start() - 280)
-                    end = min(len(hit.text), match.end() + 360)
+                    start = 0 if match is not None and match.start() == 0 and not match.group() else max(0, match.start() - 280)
+                    end = min(len(hit.text), max(640, match.end() + 360))
                     if windows and start <= windows[-1][1] + 80:
                         windows[-1] = (windows[-1][0], max(windows[-1][1], end))
                     else:
