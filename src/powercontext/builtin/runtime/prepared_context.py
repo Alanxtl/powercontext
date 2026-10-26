@@ -271,7 +271,7 @@ class PreparedContextBuilder:
     def _build_evidence_selection(
         self, request: PrepareContextRequest, memory_candidates: Sequence[PreparedMemoryCandidates]
     ) -> PreparedContextBuild:
-        terms = set(re.findall(r"[a-z]+|\d+", request.query.lower()))
+        terms = set(re.findall(r"[^\W_]+", request.query.lower(), flags=re.UNICODE))
         scored: list[tuple[float, PreparedMemoryFragment]] = []
         for group in memory_candidates:
             for hit in group.hits:
@@ -280,27 +280,57 @@ class PreparedContextBuilder:
                     entry_id=hit.entry_id,
                     entry_version_id=hit.entry_version_id,
                 )
-                matches = list(re.finditer(r"[a-z]+|\d+", hit.text.lower()))
-                for match in matches:
-                    if not (set(re.findall(r"[a-z]+|\d+", match.group())) & terms):
+                matches = [
+                    match
+                    for match in re.finditer(r"[^\W_]+", hit.text.lower(), flags=re.UNICODE)
+                    if match.group() in terms
+                ]
+                if not matches:
+                    if not any(ord(char) > 127 for char in request.query):
                         continue
-                    start = max(0, hit.text.rfind(" ", 0, max(0, match.start() - 180)))
-                    end = min(len(hit.text), hit.text.find(" ", match.end() + 220))
-                    if end < 0:
-                        end = len(hit.text)
+                    matches = [re.match(r"", hit.text)]
+                windows: list[tuple[int, int]] = []
+                for match in matches:
+                    start = 0 if match is not None and match.start() == 0 and not match.group() else max(0, match.start() - 280)
+                    end = min(len(hit.text), max(640, match.end() + 360))
+                    if windows and start <= windows[-1][1] + 80:
+                        windows[-1] = (windows[-1][0], max(windows[-1][1], end))
+                    else:
+                        windows.append((start, end))
+                for start, end in windows:
+                    while start > 0 and not hit.text[start].isspace():
+                        start -= 1
+                    while end < len(hit.text) and not hit.text[end - 1].isspace():
+                        end += 1
                     fragment = PreparedMemoryFragment(address, start, end, hit.text[start:end])
-                    words = set(re.findall(r"[a-z]+|\d+", fragment.text.lower()))
+                    words = set(re.findall(r"[^\W_]+", fragment.text.lower(), flags=re.UNICODE))
                     score = len(words & terms) / max(1, len(terms))
-                    scored.append((score, fragment))
+                    scored.append((score / max(1, len(fragment.text)), fragment))
         scored.sort(key=lambda item: item[0], reverse=True)
         selected: list[PreparedMemoryFragment] = []
+        selected_keys: set[tuple[str, str, str, int, int]] = set()
         content = ""
         for _, fragment in scored:
+            key = (
+                fragment.address.memory.scope_id,
+                fragment.address.entry_id,
+                fragment.address.entry_version_id,
+                fragment.start,
+                fragment.end,
+            )
+            if key in selected_keys:
+                continue
+            if any(
+                old.address == fragment.address and fragment.start < old.end and old.start < fragment.end
+                for old in selected
+            ):
+                continue
             candidate = [*selected, fragment]
             rendered = _render_fragments(candidate)
             if len(rendered.encode("utf-8")) > request.max_bytes:
                 continue
             selected.append(fragment)
+            selected_keys.add(key)
             content = rendered
         if not selected:
             return PreparedContextBuild(context=self.empty(), origins=())
