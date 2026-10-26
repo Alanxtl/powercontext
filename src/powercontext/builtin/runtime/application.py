@@ -828,6 +828,13 @@ class ScopedContextApplication:
         self._runtime = runtime
         self.scope_id = validate_scope_id(scope_id)
 
+    async def prepare_incremental(self, request: PrepareContextRequest, base_pack: object | None = None) -> object:
+        from powercontext.builtin.runtime.context_pack import ContextPack, ContextPackDelta
+
+        prepared = await self.prepare(request)
+        target = ContextPack.from_content(prepared.content or "")
+        return target if base_pack is None else ContextPackDelta.between(base_pack, target)
+
     async def prepare(
         self,
         request: PrepareContextRequest,

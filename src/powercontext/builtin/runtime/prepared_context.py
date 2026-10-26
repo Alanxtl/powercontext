@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from itertools import chain
@@ -106,6 +107,7 @@ class PreparedContextBuild:
     origins: tuple[PreparedContextOrigin, ...]
     omissions: PreparedContextOmissions = PreparedContextOmissions()
     code_origins: tuple[CodeEvidenceRef, ...] = ()
+    fragments: tuple[PreparedMemoryFragment, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -115,6 +117,14 @@ class MemoryEntryAddress:
     memory: ArtifactAddress
     entry_id: str
     entry_version_id: str
+
+
+@dataclass(frozen=True)
+class PreparedMemoryFragment:
+    address: MemoryEntryAddress
+    start: int
+    end: int
+    text: str
 
 
 PreparedContextOrigin = MemoryCitation | ArtifactRef | MemoryEntryAddress | ArtifactAddress
@@ -211,6 +221,8 @@ class PreparedContextBuilder:
         profile_candidates: Sequence[PreparedProfileCandidate] = (),
         code_candidates: Sequence[PreparedCodeCandidate] = (),
     ) -> PreparedContextBuild:
+        if request.evidence_selection:
+            return self._build_evidence_selection(request, memory_candidates)
         if request.include_code:
 
             def historical(history_request: PrepareContextRequest, entries: int) -> PreparedContextBuild:
@@ -254,6 +266,45 @@ class PreparedContextBuilder:
             context=PreparedContext(status="ready", content=content, content_bytes=content_bytes),
             origins=origins,
             omissions=omissions,
+        )
+
+    def _build_evidence_selection(
+        self, request: PrepareContextRequest, memory_candidates: Sequence[PreparedMemoryCandidates]
+    ) -> PreparedContextBuild:
+        terms = set(re.findall(r"[a-z]+|\d+", request.query.lower()))
+        scored: list[tuple[float, PreparedMemoryFragment]] = []
+        for group in memory_candidates:
+            for hit in group.hits:
+                address = MemoryEntryAddress(
+                    memory=ArtifactAddress(scope_id=group.scope_id, artifact=hit.memory_ref),
+                    entry_id=hit.entry_id,
+                    entry_version_id=hit.entry_version_id,
+                )
+                for match in re.finditer(r"[^.!?\n]+(?:[.!?]+|$)", hit.text):
+                    start, end = match.span()
+                    if not hit.text[start:end].strip():
+                        continue
+                    fragment = PreparedMemoryFragment(address, start, end, hit.text[start:end])
+                    words = set(re.findall(r"[a-z]+|\d+", fragment.text.lower()))
+                    score = len(words & terms) / max(1, len(terms))
+                    if score:
+                        scored.append((score, fragment))
+        scored.sort(key=lambda item: item[0], reverse=True)
+        selected: list[PreparedMemoryFragment] = []
+        content = ""
+        for _, fragment in scored:
+            candidate = [*selected, fragment]
+            rendered = _render_fragments(candidate)
+            if len(rendered.encode("utf-8")) > request.max_bytes:
+                continue
+            selected.append(fragment)
+            content = rendered
+        if not selected:
+            return PreparedContextBuild(context=self.empty(), origins=())
+        return PreparedContextBuild(
+            context=PreparedContext(status="ready", content=content, content_bytes=len(content.encode("utf-8"))),
+            origins=tuple(fragment.address for fragment in selected),
+            fragments=tuple(selected),
         )
 
     def probe_budget(
@@ -689,6 +740,28 @@ def _render(entries: Sequence[_PreparedContextEntry]) -> str:
     envelope = {
         "trust": "untrusted_history",
         "items": [_render_entry(entry) for entry in entries],
+    }
+    encoded = json.dumps(envelope, ensure_ascii=False, separators=(",", ":"))
+    return "\n\n".join((TRUST_POLICY, f"{_BEGIN_MARKER}\n{encoded}\n{_END_MARKER}"))
+
+
+def _render_fragments(fragments: Sequence[PreparedMemoryFragment]) -> str:
+    envelope = {
+        "trust": "untrusted_history",
+        "items": [
+            {
+                "citation": {
+                    "scope_id": fragment.address.memory.scope_id,
+                    "memory_ref": fragment.address.memory.artifact.model_dump(mode="json"),
+                    "entry_id": fragment.address.entry_id,
+                    "entry_version_id": fragment.address.entry_version_id,
+                },
+                "content": fragment.text,
+                "start": fragment.start,
+                "end": fragment.end,
+            }
+            for fragment in fragments
+        ],
     }
     encoded = json.dumps(envelope, ensure_ascii=False, separators=(",", ":"))
     return "\n\n".join((TRUST_POLICY, f"{_BEGIN_MARKER}\n{encoded}\n{_END_MARKER}"))
