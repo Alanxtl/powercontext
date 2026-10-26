@@ -48,10 +48,29 @@ async def enabled_profile_scopes(connection: AsyncConnection, scope_ids: tuple[s
 class SourceProcessingPendingProvider:
     """Inspect journal metadata, never Source bodies, prompts, or models."""
 
-    def __init__(self, database: AsyncDatabase, binding_name: str, artifact_family: str) -> None:
+    def __init__(
+        self, database: AsyncDatabase, binding_name: str, artifact_family: str, count_threshold: int | None = None
+    ) -> None:
         self._database = database
         self._binding = binding_name
         self._family = artifact_family
+        self._count_threshold = count_threshold
+
+    async def count_eligible(self, connection: AsyncConnection, scope_ids: tuple[str, ...]) -> frozenset[str]:
+        """Use durable journal positions, including lineage-only identities."""
+        if not scope_ids or self._count_threshold is None:
+            return frozenset()
+        heads = SOURCE_JOURNAL_HEADS_TABLE
+        rows = (
+            await connection.execute(select(heads.c.scope_id, heads.c.position).where(heads.c.scope_id.in_(scope_ids)))
+        ).all()
+        cursors = await SourceCursorRepository().load_many(connection, scope_ids, self._binding)
+        eligible = set()
+        for scope, high in rows:
+            cursor = cursors.get(scope)
+            if int(high) - (0 if cursor is None else cursor.cursor.sequence) >= self._count_threshold:
+                eligible.add(str(scope))
+        return frozenset(eligible)
 
     async def reconcile(self, after_scope_id: str | None, limit: int, *, fence: ArtifactProcessingFence) -> str | None:
         heads = SOURCE_JOURNAL_HEADS_TABLE

@@ -299,6 +299,7 @@ if TYPE_CHECKING:
 
     from powercontext.builtin.handoff_report.application import HandoffReportApplication
     from powercontext.builtin.runtime.artifact_processing import ArtifactProcessingSupervisors
+    from powercontext.builtin.runtime.source_lifecycle import SourceLifecycleApplication
 
 
 class TopicMemorySearch(Protocol):
@@ -3107,6 +3108,7 @@ class BuiltinRuntime:
         self._scheduler: AsyncIOScheduler | None = None
         self._scheduler_runtime_key: str | None = None
         self.sources = SourceApplication(self)
+        self._source_lifecycle: SourceLifecycleApplication | None = None
         self.ingestion = RemoteIngestionApplication(self, remote_ingestion)
         self.code = CodeApplication(self, code_service or CodeService(CodeConfig()))
         self.context = ContextApplication(self)
@@ -3129,6 +3131,13 @@ class BuiltinRuntime:
         self.experience_processor = (
             None if scope_ids is None or experience_incubator is None else ScheduledExperienceProcessor(self, scope_ids)
         )
+
+    @property
+    def lifecycle(self) -> SourceLifecycleApplication:
+        """The scope-local evidence lifecycle service, when relational storage is configured."""
+        if self._source_lifecycle is None:
+            raise _RuntimeStateError("records")
+        return self._source_lifecycle
 
     async def __aenter__(self) -> BuiltinRuntime:
         return self
