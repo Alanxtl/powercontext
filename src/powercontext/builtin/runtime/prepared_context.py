@@ -288,10 +288,10 @@ class PreparedContextBuilder:
                 if not matches:
                     if not any(ord(char) > 127 for char in request.query):
                         continue
-                    matches = [re.match(r"", hit.text)]
+                    matches = [next(re.finditer(r"", hit.text))]
                 windows: list[tuple[int, int]] = []
                 for match in matches:
-                    start = 0 if match is not None and match.start() == 0 and not match.group() else max(0, match.start() - 280)
+                    start = 0 if not match.group() else max(0, match.start() - 280)
                     end = min(len(hit.text), max(640, match.end() + 360))
                     if windows and start <= windows[-1][1] + 80:
                         windows[-1] = (windows[-1][0], max(windows[-1][1], end))
@@ -325,13 +325,12 @@ class PreparedContextBuilder:
                 for old in selected
             ):
                 continue
-            candidate = [*selected, fragment]
-            rendered = _render_fragments(candidate)
-            if len(rendered.encode("utf-8")) > request.max_bytes:
+            fitted = _fit_evidence_fragment(selected, fragment, terms, request.max_bytes)
+            if fitted is None:
                 continue
-            selected.append(fragment)
+            selected.append(fitted)
             selected_keys.add(key)
-            content = rendered
+            content = _render_fragments(selected)
         if not selected:
             return PreparedContextBuild(context=self.empty(), origins=())
         return PreparedContextBuild(
@@ -776,6 +775,33 @@ def _render(entries: Sequence[_PreparedContextEntry]) -> str:
     }
     encoded = json.dumps(envelope, ensure_ascii=False, separators=(",", ":"))
     return "\n\n".join((TRUST_POLICY, f"{_BEGIN_MARKER}\n{encoded}\n{_END_MARKER}"))
+
+
+def _fit_evidence_fragment(
+    selected: Sequence[PreparedMemoryFragment], fragment: PreparedMemoryFragment, terms: set[str], max_bytes: int
+) -> PreparedMemoryFragment | None:
+    """Fit a literal window around a query match, including its serialized citation."""
+    if len(_render_fragments([*selected, fragment]).encode("utf-8")) <= max_bytes:
+        return fragment
+    anchor = next(
+        (match.start() for match in re.finditer(r"[^\W_]+", fragment.text) if match.group().lower() in terms),
+        0,
+    )
+    low, high = 1, len(fragment.text)
+    fitted = None
+    while low <= high:
+        length = (low + high) // 2
+        start = max(0, min(anchor - length // 2, len(fragment.text) - length))
+        end = start + length
+        candidate = replace(
+            fragment, start=fragment.start + start, end=fragment.start + end, text=fragment.text[start:end]
+        )
+        if len(_render_fragments([*selected, candidate]).encode("utf-8")) <= max_bytes:
+            fitted = candidate
+            low = length + 1
+        else:
+            high = length - 1
+    return fitted
 
 
 def _render_fragments(fragments: Sequence[PreparedMemoryFragment]) -> str:
