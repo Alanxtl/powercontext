@@ -280,15 +280,18 @@ class PreparedContextBuilder:
                     entry_id=hit.entry_id,
                     entry_version_id=hit.entry_version_id,
                 )
-                for match in re.finditer(r"[^.!?\n]+(?:[.!?]+|$)", hit.text):
-                    start, end = match.span()
-                    if not hit.text[start:end].strip():
+                matches = list(re.finditer(r"[a-z]+|\d+", hit.text.lower()))
+                for match in matches:
+                    if not (set(re.findall(r"[a-z]+|\d+", match.group())) & terms):
                         continue
+                    start = max(0, hit.text.rfind(" ", 0, max(0, match.start() - 180)))
+                    end = min(len(hit.text), hit.text.find(" ", match.end() + 220))
+                    if end < 0:
+                        end = len(hit.text)
                     fragment = PreparedMemoryFragment(address, start, end, hit.text[start:end])
                     words = set(re.findall(r"[a-z]+|\d+", fragment.text.lower()))
                     score = len(words & terms) / max(1, len(terms))
-                    if score:
-                        scored.append((score, fragment))
+                    scored.append((score, fragment))
         scored.sort(key=lambda item: item[0], reverse=True)
         selected: list[PreparedMemoryFragment] = []
         content = ""

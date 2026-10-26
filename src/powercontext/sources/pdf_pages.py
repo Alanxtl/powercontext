@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import hashlib
 import io
+import re
+import asyncio
 from urllib.parse import quote
 
 from pydantic import BaseModel
@@ -107,10 +109,21 @@ PDF_PAGE_SOURCE_DEFINITION = AdapterSourceDefinition(
 async def search_pdf_pages(memory, question: str, limit: int = 10) -> tuple[MemoryCitation, ...]:
     if limit <= 0:
         return ()
-    result = await memory.search(SearchMemoryRequest(query=question, mode="fts", limit=limit))
+    terms = tuple(dict.fromkeys(re.findall(r"[a-z]+|\d+", question.lower())))
+    queries = (question, *[term for term in terms if len(term) > 2][:12])
+    results = await asyncio.gather(
+        *(memory.search(SearchMemoryRequest(query=query, mode="fts", limit=max(limit, 20))) for query in queries)
+    )
+    candidates = {}
+    for result in results:
+        for hit in result.hits:
+            key = (hit.entry_id, hit.entry_version_id)
+            text = hit.text.lower()
+            overlap = sum(text.count(term) for term in terms)
+            candidates[key] = (overlap, hit)
     seen: set[tuple[str, str]] = set()
     citations: list[MemoryCitation] = []
-    for hit in result.hits:
+    for _, hit in sorted(candidates.values(), key=lambda item: (-item[0], -item[1].score))[:limit]:
         key = (hit.entry_id, hit.entry_version_id)
         if key in seen:
             continue
