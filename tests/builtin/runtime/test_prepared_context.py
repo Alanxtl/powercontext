@@ -1047,3 +1047,23 @@ def test_code_opt_in_preserves_topic_assembly_selection(assembly, expect_topic) 
     assert result.context.content is not None
     assert ("Title topic-1" in result.context.content) is expect_topic
     assert "BEGIN_POWERCONTEXT_CODE_V1" in result.context.content
+
+
+@pytest.mark.parametrize("phrase", ["海洋观测 station records temperatures. ", "Cobalt station records temperatures. "])
+@pytest.mark.parametrize("max_bytes", [900, 1200])
+def test_evidence_selection_fits_merged_windows_and_preserves_literal_offsets(phrase, max_bytes):
+    text = phrase * 80
+    result = PreparedContextBuilder().build_result(
+        scope_id="project:test",
+        memory_ref=MEMORY_REF,
+        hits=(_hit("repeated-evidence", text),),
+        request=PrepareContextRequest(
+            query=phrase.split()[0] + " station", max_bytes=max_bytes, evidence_selection=True
+        ),
+    )
+    assert result.fragments
+    assert result.context.content is not None
+    assert result.context.content_bytes == len(result.context.content.encode("utf-8")) <= max_bytes
+    for fragment in result.fragments:
+        assert fragment.text == text[fragment.start : fragment.end]
+        assert "station" in fragment.text

@@ -656,6 +656,9 @@ async def open_builtin_runtime(
         runtime.artifact_processing_supervisor = await resources.enter_async_context(
             _open_artifact_processing_supervisor(config, contexts, processing_bindings, tracing=tracing)
         )
+        from powercontext.builtin.runtime.source_lifecycle import SourceLifecycleApplication
+
+        runtime._source_lifecycle = SourceLifecycleApplication(runtime, contexts.database)
         contexts.profiles.operation_context = runtime._operation
         if config.handoff_report.enabled:
             runtime.handoff_report = HandoffReportApplication(
@@ -771,6 +774,12 @@ def _artifact_processing_bindings(  # noqa: C901 - validate and assemble one reg
             entrypoint = partial(run_family_worker, FamilyWorkerSpec(config=config, worker_security=worker_security))
         interval = None if family == "profile" else automatic[family]
         binding = canonical[family]
+        threshold = getattr(config.runtime, f"{prefix}_source_count_threshold", None)
+        pending = (
+            None
+            if family == "skill"
+            else SourceProcessingPendingProvider(contexts.database, binding, family, threshold)
+        )
         configured.append(
             ArtifactProcessingBinding(
                 binding_name=binding,
@@ -783,9 +792,8 @@ def _artifact_processing_bindings(  # noqa: C901 - validate and assemble one reg
                 if family == "profile" and config.runtime.profile_schedule_enabled
                 else None,
                 timezone=config.runtime.profile_timezone if family == "profile" else "Asia/Shanghai",
-                pending_provider=None
-                if family == "skill"
-                else SourceProcessingPendingProvider(contexts.database, binding, family),
+                pending_provider=pending,
+                source_count_filter=pending.count_eligible if threshold is not None and pending is not None else None,
                 automatic_scope_filter=enabled_profile_scopes if family == "profile" else None,
             )
         )
@@ -960,10 +968,7 @@ async def open_builtin_contexts(
                 await contexts.aclose_usage_recorder()
         return
     experience_index = OceanBaseExperienceFTSIndex()
-    indexes = [OceanBaseMemoryFTSIndex()]
-    if embedding_model is not None:
-        indexes.append(OceanBaseMemoryVectorIndex(embedding_model.profile))
-    index = CompositeMemoryIndex(*indexes)
+    index = _native_memory_index(database, embedding_model)
     topic_indexes: list[TopicMemoryIndex] = [OceanBaseTopicMemoryFTSIndex()]
     if embedding_model is not None:
         topic_indexes.append(OceanBaseTopicMemoryVectorIndex(embedding_model.profile))
@@ -1834,6 +1839,17 @@ def _external_skill_provider(settings: ExternalSkillsConfig) -> ExternalSkillPro
     if settings.host_id is None:
         raise BuiltinConfigurationError("external-skill-host")
     return AgentSkillProvider(host_id=settings.host_id, targets=settings.agent_targets)
+
+
+def _native_memory_index(database: OceanBaseConfig | SeekDBConfig, model: EmbeddingModel | None) -> MemoryIndex:
+    if isinstance(database, SeekDBConfig) and model is not None:
+        from powercontext.builtin.persistence.seekdb.memory_index import SeekDBMemoryIndex
+
+        return SeekDBMemoryIndex(model.profile)
+    indexes: list[MemoryIndex] = [OceanBaseMemoryFTSIndex()]
+    if model is not None:
+        indexes.append(OceanBaseMemoryVectorIndex(model.profile))
+    return CompositeMemoryIndex(*indexes)
 
 
 def _search_modes(capabilities: MemoryCapabilities) -> tuple[MemorySearchMode, ...]:

@@ -52,6 +52,7 @@ from powercontext.builtin.artifacts.topic_memory import (
     TopicMemorySearchChannels,
     TopicMemorySearchRequest,
 )
+from powercontext.builtin.persistence.source_lifecycle import topic_available_sql
 from powercontext.builtin.persistence.tables import (
     SHARED_METADATA,
     TOPIC_MEMORY_ACTIVE_CHUNKS_TABLE,
@@ -153,6 +154,7 @@ _SEARCH_TOPIC_FTS_SQL = """
                bm25(pc_topic_memory_topic_fts) AS score, ({coverage}) AS coverage
         FROM pc_topic_memory_topic_fts
         WHERE pc_topic_memory_topic_fts MATCH :query AND scope_id = :scope_id
+          AND {availability}
     )
     SELECT artifact_id, revision, title, summary
     FROM scored
@@ -164,12 +166,14 @@ _COUNT_TOPIC_FTS_SQL = """
     SELECT count(*)
     FROM pc_topic_memory_topic_fts
     WHERE pc_topic_memory_topic_fts MATCH :query AND scope_id = :scope_id
+          AND {availability}
     """
 _COUNT_TOPIC_FTS_ELIGIBLE_SQL = """
     WITH scored AS (
         SELECT ({coverage}) AS coverage
         FROM pc_topic_memory_topic_fts
         WHERE pc_topic_memory_topic_fts MATCH :query AND scope_id = :scope_id
+          AND {availability}
     )
     SELECT count(*)
     FROM scored
@@ -181,6 +185,7 @@ _SEARCH_CHUNK_FTS_SQL = """
                bm25(pc_topic_memory_chunk_fts) AS score, ({coverage}) AS coverage
         FROM pc_topic_memory_chunk_fts
         WHERE pc_topic_memory_chunk_fts MATCH :query AND scope_id = :scope_id
+          AND {availability}
     ), ranked AS (
         SELECT scored.*,
                row_number() OVER (
@@ -201,6 +206,7 @@ _COUNT_CHUNK_FTS_SQL = """
                bm25(pc_topic_memory_chunk_fts) AS score, ({coverage}) AS coverage
         FROM pc_topic_memory_chunk_fts
         WHERE pc_topic_memory_chunk_fts MATCH :query AND scope_id = :scope_id
+          AND {availability}
     ), ranked AS (
         SELECT scored.*,
                row_number() OVER (
@@ -219,6 +225,7 @@ _COUNT_CHUNK_FTS_ELIGIBLE_SQL = """
                bm25(pc_topic_memory_chunk_fts) AS score, ({coverage}) AS coverage
         FROM pc_topic_memory_chunk_fts
         WHERE pc_topic_memory_chunk_fts MATCH :query AND scope_id = :scope_id
+          AND {availability}
     ), ranked AS (
         SELECT scored.*,
                row_number() OVER (
@@ -254,6 +261,7 @@ _TOPIC_VECTOR_SEARCH_SQL = text(
           AND rowid IN (
               SELECT vector_id FROM pc_topic_memory_vector_topics
               WHERE scope_id = :scope_id AND profile_fingerprint = :profile_fingerprint
+                AND {availability}
           )
     )
     SELECT a.artifact_id, a.revision, a.title, a.summary, nearest.distance
@@ -264,7 +272,7 @@ _TOPIC_VECTOR_SEARCH_SQL = text(
     WHERE v.scope_id = :scope_id
     ORDER BY nearest.distance, a.artifact_id, a.revision DESC
     LIMIT :candidate_limit
-    """
+    """.replace("{availability}", topic_available_sql("pc_topic_memory_vector_topics"))
 )
 _CHUNK_VECTOR_SEARCH_SQL = text(
     """
@@ -274,6 +282,7 @@ _CHUNK_VECTOR_SEARCH_SQL = text(
           AND rowid IN (
               SELECT vector_id FROM pc_topic_memory_vector_chunks
               WHERE scope_id = :scope_id AND profile_fingerprint = :profile_fingerprint
+                AND {availability}
           )
     ), ranked AS (
         SELECT a.artifact_id, a.revision, a.title, a.summary,
@@ -297,7 +306,7 @@ _CHUNK_VECTOR_SEARCH_SQL = text(
     WHERE topic_rank = 1
     ORDER BY distance, artifact_id, revision DESC, chunk_ordinal
     LIMIT :candidate_limit
-    """
+    """.replace("{availability}", topic_available_sql("pc_topic_memory_vector_chunks"))
 )
 
 
@@ -408,21 +417,53 @@ class SQLiteTopicMemoryFTSIndex:
             "required_matches": required_matches,
             **{f"coverage_term_{position}": f" {term} " for position, term in enumerate(query_terms)},
         }
-        topic_retrieved = await connection.scalar(text(_COUNT_TOPIC_FTS_SQL), parameters)
+        topic_retrieved = await connection.scalar(
+            text(_COUNT_TOPIC_FTS_SQL.replace("{availability}", topic_available_sql("pc_topic_memory_topic_fts"))),
+            parameters,
+        )
         topic_eligible = await connection.scalar(
-            text(_COUNT_TOPIC_FTS_ELIGIBLE_SQL.format(coverage=coverage)),
+            text(
+                _COUNT_TOPIC_FTS_ELIGIBLE_SQL.format(
+                    coverage=coverage, availability=topic_available_sql("pc_topic_memory_topic_fts")
+                )
+            ),
             parameters,
         )
         topic_rows = (
-            await connection.execute(text(_SEARCH_TOPIC_FTS_SQL.format(coverage=coverage)), parameters)
+            await connection.execute(
+                text(
+                    _SEARCH_TOPIC_FTS_SQL.format(
+                        coverage=coverage, availability=topic_available_sql("pc_topic_memory_topic_fts")
+                    )
+                ),
+                parameters,
+            )
         ).mappings()
-        detail_retrieved = await connection.scalar(text(_COUNT_CHUNK_FTS_SQL.format(coverage=coverage)), parameters)
+        detail_retrieved = await connection.scalar(
+            text(
+                _COUNT_CHUNK_FTS_SQL.format(
+                    coverage=coverage, availability=topic_available_sql("pc_topic_memory_chunk_fts")
+                )
+            ),
+            parameters,
+        )
         detail_eligible = await connection.scalar(
-            text(_COUNT_CHUNK_FTS_ELIGIBLE_SQL.format(coverage=coverage)),
+            text(
+                _COUNT_CHUNK_FTS_ELIGIBLE_SQL.format(
+                    coverage=coverage, availability=topic_available_sql("pc_topic_memory_chunk_fts")
+                )
+            ),
             parameters,
         )
         chunk_rows = (
-            await connection.execute(text(_SEARCH_CHUNK_FTS_SQL.format(coverage=coverage)), parameters)
+            await connection.execute(
+                text(
+                    _SEARCH_CHUNK_FTS_SQL.format(
+                        coverage=coverage, availability=topic_available_sql("pc_topic_memory_chunk_fts")
+                    )
+                ),
+                parameters,
+            )
         ).mappings()
         return TopicMemorySearchChannels(
             topic_fts=tuple(_channel_hit(row, "topic_fts") for row in topic_rows),
