@@ -979,6 +979,56 @@ def test_code_evidence_merges_overlapping_ranges_without_losing_source() -> None
     assert candidates[0].origin.snippet_sha256 == digest_bytes(content.encode())
 
 
+def test_evidence_selection_does_not_fall_back_to_unmatched_unicode_content() -> None:
+    result = PreparedContextBuilder().build_scopes_result(
+        request=PrepareContextRequest(query="海洋观测", evidence_selection=True),
+        current_scope_id="current",
+        memory_candidates=(
+            PreparedMemoryCandidates(
+                scope_id="current",
+                memory_ref=MEMORY_REF,
+                hits=(_hit("unrelated", "An unrelated scientific note."),),
+            ),
+        ),
+    )
+
+    assert result.context.status == "empty"
+    assert result.fragments == ()
+
+
+def test_evidence_selection_budget_truncation_preserves_source_word_boundaries() -> None:
+    text = "Cobalt " + "evidence " * 800
+    result = PreparedContextBuilder().build_scopes_result(
+        request=PrepareContextRequest(query="cobalt", max_bytes=750, evidence_selection=True),
+        current_scope_id="current",
+        memory_candidates=(
+            PreparedMemoryCandidates(scope_id="current", memory_ref=MEMORY_REF, hits=(_hit("long", text),)),
+        ),
+    )
+
+    assert result.context.content_bytes <= 750
+    assert len(result.fragments) == 1
+    fragment = result.fragments[0]
+    assert fragment.text == text[fragment.start : fragment.end]
+    assert fragment.start == 0 and fragment.end < len(text)
+    assert text[fragment.end].isspace() or text[fragment.end] in ".,;:!?)]}"
+    assert fragment.text.split()[-1] == "evidence"
+
+
+def test_evidence_selection_prefers_query_terms_in_the_same_sentence() -> None:
+    text = "Alpha beta. Alpha appears among many unrelated words before beta."
+    result = PreparedContextBuilder().build_scopes_result(
+        request=PrepareContextRequest(query="alpha beta", max_bytes=1400, evidence_selection=True),
+        current_scope_id="current",
+        memory_candidates=(
+            PreparedMemoryCandidates(scope_id="current", memory_ref=MEMORY_REF, hits=(_hit("ordered", text),)),
+        ),
+    )
+
+    assert result.fragments
+    assert result.fragments[0].text.startswith("Alpha beta.")
+
+
 @pytest.mark.parametrize(
     "assembly,expect_topic", [(None, True), (ContextAssembly(), False), (ContextAssembly(sections=()), False)]
 )

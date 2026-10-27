@@ -17,10 +17,12 @@
 from __future__ import annotations
 
 import json
+import math
 import re
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from itertools import chain
+from itertools import chain, pairwise
 from typing import TypeVar
 
 from powercontext.artifacts import ArtifactAddress, ArtifactRef
@@ -44,10 +46,797 @@ from powercontext.builtin.runtime.prepared_text import (
 from powercontext.builtin.runtime.recall_sufficiency import RecallBudgetView
 
 _MIN_TRUNCATED_CONTENT_BYTES = 64
+# A window of two or three sentences is the longest one that is still worth a citation
+# of its own: a longer window spends the budget that a second, separate statement of
+# the same abstract needs.  Two windows that touch are merged when they are scored, so
+# a longer stretch of text is still covered by two cheap windows.
+_SELECTION_RUN_LENGTHS = (2, 3, 4)
+_SELECTION_RUN_REQUIRES_NEW_TERMS = False
+_SELECTION_EXTEND_SENTENCES = 3
+_SELECTION_EXTEND_FIRST_ONLY = False
+# The retrieval stage's own ranking is a prior that the selection stage keeps: the
+# first candidate of the retrieval order is discounted gently, so a window of the
+# abstract that the retrieval stage ranked first stays the best candidate.
+_SELECTION_HIT_WEIGHT = "rank"
+# How strongly the retrieval order still counts once the content signal is known.
+# The content signal ranks the abstracts by the query terms they actually carry;
+# the retrieval order only breaks a tie, because the retrieval stage compares whole
+# entries while the evidence of one claim lives in a few sentences of one abstract.
+_SELECTION_ORDER_TIEBREAK = 0.0
+# A query term that only one candidate entry carries is the strongest hint that
+# this entry holds the evidence, so it counts more than a term every entry shares.
+_SELECTION_EXCLUSIVE_BONUS = 2.0
+_SELECTION_OTHER_ENTRY_FACTOR = 1.0
+# How one candidate window is compared with the others.
+#
+# "absolute" ranks by the lexical weight a window adds, which favours a window that
+# happens to mention one more (possibly generic) query word.
+# "efficiency" divides that weight by the number of characters the window costs, so
+# a tight window that carries the claim's content words wins over a sprawling one.
+# "density" ranks by the weight per token of the window.
+_SELECTION_RANK_MODE = "absolute"
+# A claim can be supported by several statements of one abstract, and every statement
+# is evidence.  When two windows carry the same query words, the one that reaches into
+# a part of the abstract that is still untouched answers a different statement, so it
+# is preferred over a second window over the part that is already selected.
+_SELECTION_SPREAD_REGIONS = True
+# Whether an untouched part of the abstract outranks a window that repeats what the
+# output already carries.  With it off, the windows are ranked by the lexical weight
+# they add alone.
+_SELECTION_SPREAD_FIRST = True
 _ELLIPSIS = "…"
 _BEGIN_MARKER = "BEGIN_POWERCONTEXT_PREPARED_CONTEXT_V1"
 _END_MARKER = "END_POWERCONTEXT_PREPARED_CONTEXT_V1"
 _Item = TypeVar("_Item")
+_SELECTION_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "by",
+        "can",
+        "could",
+        "do",
+        "does",
+        "for",
+        "from",
+        "has",
+        "have",
+        "how",
+        "if",
+        "in",
+        "is",
+        "it",
+        "of",
+        "on",
+        "or",
+        "that",
+        "the",
+        "their",
+        "then",
+        "these",
+        "this",
+        "to",
+        "was",
+        "were",
+        "what",
+        "when",
+        "which",
+        "who",
+        "why",
+        "with",
+    }
+)
+
+
+def _selection_terms(value: str) -> tuple[tuple[str, int, int], ...]:
+    terms: list[tuple[str, int, int]] = []
+    start: int | None = None
+    token: list[str] = []
+
+    def flush(end: int) -> None:
+        nonlocal start
+        if start is not None:
+            terms.append(("".join(token).casefold(), start, end))
+            token.clear()
+            start = None
+
+    for index, character in enumerate(value):
+        if _is_cjk(character):
+            flush(index)
+            terms.append((character, index, index + 1))
+        elif character.isalnum() and not _is_cjk(character):
+            if start is None:
+                start = index
+            token.append(character)
+        else:
+            flush(index)
+    flush(len(value))
+    return tuple(terms)
+
+
+def _is_cjk(char: str) -> bool:
+    point = ord(char)
+    return 0x3400 <= point <= 0x4DBF or 0x4E00 <= point <= 0x9FFF or 0xF900 <= point <= 0xFAFF
+
+
+# A full stop that ends an abbreviation does not end a sentence: "vs.", "e.g.",
+# "S. aureus" and "U.S." all continue.  Splitting there would cut a sentence in
+# half and make the rest of it unreachable for a window that has to contain whole
+# sentences.
+_SELECTION_ABBREVIATIONS = frozenset(
+    {
+        "al",
+        "approx",
+        "ca",
+        "cf",
+        "dr",
+        "e.g",
+        "eg",
+        "eq",
+        "eqs",
+        "est",
+        "etc",
+        "fig",
+        "figs",
+        "i.e",
+        "ie",
+        "inc",
+        "jr",
+        "ltd",
+        "mr",
+        "mrs",
+        "ms",
+        "no",
+        "nos",
+        "prof",
+        "ref",
+        "refs",
+        "rep",
+        "sr",
+        "st",
+        "tab",
+        "vol",
+        "vs",
+    }
+)
+
+
+def _selection_sentence_boundaries(value: str) -> list[tuple[int, int]]:
+    """The spans of the sentences of ``value``, keeping abbreviations together."""
+
+    spans: list[tuple[int, int]] = []
+    start = 0
+    for boundary in re.finditer(r"(?<=[.!?])\s+|\n+", value):
+        cut = boundary.start()
+        if start < cut and not _selection_ends_abbreviation(value, start, cut):
+            spans.append((start, cut))
+            start = boundary.end()
+        elif start >= cut:
+            start = boundary.end()
+    if start < len(value):
+        spans.append((start, len(value)))
+    return spans
+
+
+def _selection_ends_ellipsis(value: str, start: int, cut: int) -> bool:
+    """Whether the sentence candidate ends in a run of full stops.
+
+    Scientific text marks a gap with " . . . " far more often than it ends a
+    sentence, so a run of full stops continues the sentence instead of ending it.
+    """
+
+    # Walk back over the full stops and the spaces between them.
+    index = cut - 1
+    full_stops = 0
+    while index >= start:
+        character = value[index]
+        if character == ".":
+            full_stops += 1
+            index -= 1
+            continue
+        if character in " \t":
+            index -= 1
+            continue
+        break
+    if full_stops < 2:
+        return False
+    # A run of full stops that reaches the start of the sentence is an ellipsis
+    # itself, not the end of one.
+    return index >= start
+
+
+def _selection_ends_abbreviation(value: str, start: int, cut: int) -> bool:
+    """Whether the sentence candidate that ends at ``cut`` is really an abbreviation."""
+
+    if value[cut - 1] != ".":
+        return False
+    # An ellipsis continues the sentence: "in vitro . . . and in vivo . . . were".
+    if _selection_ends_ellipsis(value, start, cut):
+        return True
+    # The word in front of the full stop decides.
+    word_start = cut - 1
+    while word_start > start and (value[word_start - 1].isalnum() or value[word_start - 1] == "."):
+        word_start -= 1
+    word = value[word_start : cut - 1]
+    if not word:
+        return False
+    if word.casefold() in _SELECTION_ABBREVIATIONS:
+        return True
+    # A single capital letter is an initial, as in "S. aureus" or "H. pylori".
+    if len(word) == 1 and word.isalpha() and word.isupper():
+        return True
+    # A dotted acronym such as "U.S." keeps its last letter in the word.
+    return (
+        len(word) > 1
+        and all(part.isalpha() for part in word.split("."))
+        and word.replace(".", "").isupper()
+    )
+
+
+def _fragment_end_boundaries(value: str) -> tuple[int, ...]:
+    return tuple(
+        offset
+        for offset in range(1, len(value) + 1)
+        if offset == len(value)
+        or value[offset].isspace()
+        or _is_cjk(value[offset - 1])
+        or value[offset - 1] in ".,;:!?)]}\"'"
+    )
+
+
+@dataclass(frozen=True)
+class _SelectionCandidate:
+    """One sentence-aligned candidate window inside a Memory entry."""
+
+    address: MemoryEntryAddress
+    start: int
+    end: int
+    text: str
+    covered: frozenset[str]
+    coverage: float
+    proximity: float
+    density: float
+    required_end: int
+    sentence_index: int
+    hit_weight: float
+
+
+def _selection_term_weights(
+    query_terms: set[str], memory_candidates: Sequence[PreparedMemoryCandidates]
+) -> tuple[dict[str, float], float]:
+    hits = tuple((group, hit) for group in memory_candidates for hit in group.hits)
+    document_frequency = Counter(
+        term
+        for _group, hit in hits
+        for term in query_terms.intersection({token for token, _start, _end in _selection_terms(hit.text)})
+    )
+    weights = {term: math.log1p((len(hits) + 1) / (document_frequency[term] + 1)) for term in query_terms}
+    return weights, sum(weights.values()) or 1.0
+
+
+def _selection_proximity(
+    ordered_query_terms: Sequence[str],
+    matches: Sequence[tuple[str, int, int]],
+) -> float:
+    """Score how close the covered query terms sit to each other inside one window."""
+
+    pair_scores: list[float] = []
+    for left, right in pairwise(ordered_query_terms):
+        left_ends = [match_end for term, _match_start, match_end in matches if term == left]
+        right_starts = [match_start for term, match_start, _match_end in matches if term == right]
+        distances = [right_start - left_end for left_end in left_ends for right_start in right_starts if right_start >= left_end]
+        if distances:
+            pair_scores.append(1.0 / (1.0 + min(distances) / 24.0))
+    return sum(pair_scores) / max(1, len(ordered_query_terms) - 1)
+
+
+def _selection_candidate(
+    address: MemoryEntryAddress,
+    text: str,
+    start: int,
+    end: int,
+    matches: Sequence[tuple[str, int, int]],
+    *,
+    weights: dict[str, float],
+    total_weight: float,
+    ordered_query_terms: Sequence[str],
+    sentence_index: int,
+    hit_weight: float,
+) -> _SelectionCandidate:
+    inside = tuple(match for match in matches if start <= match[1] and match[2] <= end)
+    covered = frozenset(match[0] for match in inside)
+    covered_weight = sum(weights[term] for term in covered)
+    coverage = covered_weight / total_weight
+    density = covered_weight / math.sqrt(max(1, len(_selection_terms(text[start:end]))))
+    required_end = max(
+        (match_end for term, _match_start, match_end in inside),
+        default=end,
+    )
+    return _SelectionCandidate(
+        address=address,
+        start=start,
+        end=end,
+        text=text[start:end],
+        covered=covered,
+        coverage=coverage,
+        proximity=_selection_proximity(ordered_query_terms, inside),
+        density=density,
+        required_end=required_end,
+        sentence_index=sentence_index,
+        hit_weight=hit_weight,
+    )
+
+
+def _selection_hit_weight(rank: int, score: float, group: PreparedMemoryCandidates) -> float:
+    """How much the retrieval stage's own ranking discounts one candidate entry.
+
+    The retrieval stage already decided which Memory entries answer the query, so
+    that ranking is a prior the selection stage should not throw away.
+    """
+
+    if _SELECTION_HIT_WEIGHT == "flat":
+        return 1.0
+    if _SELECTION_HIT_WEIGHT == "steep":
+        return 1.0 / (1.0 + rank) ** 2
+    if _SELECTION_HIT_WEIGHT == "score":
+        best = max((float(hit.score) for hit in group.hits), default=0.0)
+        return float(score) / best if best > 0 else 1.0
+    return 1.0 / (1.0 + rank)
+
+
+def _selection_entry_weights(
+    group: PreparedMemoryCandidates,
+    query_terms: set[str],
+    weights: dict[str, float],
+) -> dict[str, float]:
+    """How well each candidate entry answers the query, independent of its rank.
+
+    The retrieval stage compares whole entries, so its order says little about
+    which entry holds the evidence of one claim: that evidence lives in a few
+    sentences.  This score looks at the query terms an entry carries and gives
+    extra weight to the terms that only this entry carries, because a term that
+    every candidate carries cannot tell them apart.
+    """
+
+    entries: dict[str, tuple[PreparedMemoryCandidates, object]] = {}
+    for hit in group.hits:
+        entries[hit.entry_id] = (group, hit)
+    if not entries:
+        return {}
+    document_frequency = Counter()
+    for _group, hit in entries.values():
+        present = {term for term, _start, _end in _selection_terms(hit.text)}
+        for term in query_terms.intersection(present):
+            document_frequency[term] += 1
+    scores: dict[str, float] = {}
+    for entry_id, (_group, hit) in entries.items():
+        present = {term for term, _start, _end in _selection_terms(hit.text)}
+        covered = query_terms.intersection(present)
+        weight = sum(weights.get(term, 1.0) for term in covered)
+        exclusive = sum(1 for term in covered if document_frequency[term] == 1)
+        scores[entry_id] = weight + _SELECTION_EXCLUSIVE_BONUS * exclusive
+    best = max(scores.values(), default=0.0)
+    if best <= 0:
+        return dict.fromkeys(scores, 1.0)
+    return {entry_id: score / best for entry_id, score in scores.items()}
+
+
+def _selection_candidate_weight(
+    rank: int,
+    score: float,
+    group: PreparedMemoryCandidates,
+    entry_weight: float,
+) -> float:
+    """Combine the content signal of an entry with the retrieval order."""
+
+    order = _selection_hit_weight(rank, score, group)
+    return entry_weight * (1.0 - _SELECTION_ORDER_TIEBREAK) + order * _SELECTION_ORDER_TIEBREAK
+
+
+def _sentence_term_matches(
+    sentences: tuple[tuple[int, int], ...],
+    matches: Sequence[tuple[str, int, int]],
+) -> dict[int, frozenset[str]]:
+    """The query terms each sentence of an entry carries."""
+
+    return {
+        index: frozenset(
+            term for term, match_start, _match_end in matches if start <= match_start < end
+        )
+        for index, (start, end) in enumerate(sentences)
+    }
+
+
+def _selection_candidates(
+    memory_candidates: Sequence[PreparedMemoryCandidates],
+    query_terms: set[str],
+    ordered_query_terms: Sequence[str],
+    weights: dict[str, float],
+    total_weight: float,
+) -> tuple[
+    tuple[_SelectionCandidate, ...],
+    dict[tuple[str, str, str], tuple[tuple[int, int], ...]],
+    dict[tuple[str, str, str], dict[int, frozenset[str]]],
+]:
+    """Build sentence-aligned candidate windows for every Memory candidate.
+
+    A candidate never starts or ends inside a sentence, so a selected window either
+    contains a whole sentence or none of it.  That keeps the selected text verifiable
+    against the original entry and avoids paying budget for half a sentence.
+    """
+
+    candidates: list[_SelectionCandidate] = []
+    sentences_by_entry: dict[tuple[str, str, str], tuple[tuple[int, int], ...]] = {}
+    matches_by_entry: dict[tuple[str, str, str], dict[int, frozenset[str]]] = {}
+    for group in memory_candidates:
+        entry_weights = _selection_entry_weights(group, query_terms, weights)
+        for rank, hit in enumerate(group.hits):
+            matches = tuple(item for item in _selection_terms(hit.text) if item[0] in query_terms)
+            if not matches:
+                continue
+            address = MemoryEntryAddress(
+                memory=ArtifactAddress(scope_id=group.scope_id, artifact=hit.memory_ref),
+                entry_id=hit.entry_id,
+                entry_version_id=hit.entry_version_id,
+            )
+            # The content of the entry decides which one answers the query; the
+            # retrieval order only breaks a tie between equally relevant entries.
+            hit_weight = _selection_candidate_weight(
+                rank, hit.score, group, entry_weights.get(hit.entry_id, 1.0)
+            )
+            sentences = tuple(_selection_sentence_boundaries(hit.text))
+            sentences_by_entry[_selection_address_key(address)] = sentences
+            matches_by_entry[_selection_address_key(address)] = _sentence_term_matches(
+                sentences, matches
+            )
+            singles: list[_SelectionCandidate] = []
+            for index, (start, end) in enumerate(sentences):
+                if not any(start <= match_start < end for _term, match_start, _match_end in matches):
+                    continue
+                singles.append(
+                    _selection_candidate(
+                        address,
+                        hit.text,
+                        start,
+                        end,
+                        matches,
+                        weights=weights,
+                        total_weight=total_weight,
+                        ordered_query_terms=ordered_query_terms,
+                        sentence_index=index,
+                        hit_weight=hit_weight,
+                    )
+                )
+            candidates.extend(singles)
+            # Contiguous sentence runs let one envelope item carry two neighbouring
+            # sentences, which is cheaper than paying a second citation for them.
+            for length in _SELECTION_RUN_LENGTHS:
+                for index in range(len(sentences) - length + 1):
+                    start = sentences[index][0]
+                    end = sentences[index + length - 1][1]
+                    inside = tuple(match for match in matches if start <= match[1] and match[2] <= end)
+                    if not inside:
+                        continue
+                    covered = frozenset(match[0] for match in inside)
+                    single_covered = frozenset(
+                        term for candidate in singles if candidate.start >= start and candidate.end <= end for term in candidate.covered
+                    )
+                    if covered <= single_covered and _SELECTION_RUN_REQUIRES_NEW_TERMS:
+                        continue
+                    candidates.append(
+                        _selection_candidate(
+                            address,
+                            hit.text,
+                            start,
+                            end,
+                            matches,
+                            weights=weights,
+                            total_weight=total_weight,
+                            ordered_query_terms=ordered_query_terms,
+                            sentence_index=index,
+                            hit_weight=hit_weight,
+                        )
+                    )
+    return tuple(candidates), sentences_by_entry, matches_by_entry
+
+
+def _fit_selection_fragment(
+    selected: Sequence[PreparedMemoryFragment],
+    fragment: PreparedMemoryFragment,
+    required_end: int,
+    max_bytes: int,
+) -> tuple[PreparedMemoryFragment, str] | None:
+    rendered = _render_fragments((*selected, fragment))
+    if len(rendered.encode("utf-8")) <= max_bytes:
+        return fragment, rendered
+    valid_ends = tuple(
+        offset for offset in _fragment_end_boundaries(fragment.text) if fragment.start + offset >= required_end
+    )
+    low, high = 0, len(valid_ends) - 1
+    best: PreparedMemoryFragment | None = None
+    while low <= high:
+        middle = (low + high) // 2
+        end = fragment.start + valid_ends[middle]
+        shortened = replace(fragment, end=end, text=fragment.text[: valid_ends[middle]])
+        if len(_render_fragments((*selected, shortened)).encode("utf-8")) <= max_bytes:
+            best = shortened
+            low = middle + 1
+        else:
+            high = middle - 1
+    if best is None:
+        return None
+    return best, _render_fragments((*selected, best))
+
+
+def _selection_fragment_key(fragment: PreparedMemoryFragment) -> tuple[str, str, str, int, int]:
+    return (
+        fragment.address.memory.scope_id,
+        fragment.address.entry_id,
+        fragment.address.entry_version_id,
+        fragment.start,
+        fragment.end,
+    )
+
+
+def _selection_entry_key(fragment: PreparedMemoryFragment) -> tuple[str, str, str]:
+    return (
+        fragment.address.memory.scope_id,
+        fragment.address.entry_id,
+        fragment.address.entry_version_id,
+    )
+
+
+def _selection_address_key(address: MemoryEntryAddress) -> tuple[str, str, str]:
+    return (address.memory.scope_id, address.entry_id, address.entry_version_id)
+
+
+def _selection_overlaps(selected: Sequence[PreparedMemoryFragment], start: int, end: int, key: tuple[str, str, str]) -> bool:
+    return any(
+        _selection_entry_key(fragment) == key and fragment.start < end and start < fragment.end
+        for fragment in selected
+    )
+
+
+def _selection_item_overhead() -> int:
+    """Bytes one extra envelope item costs on top of its own text."""
+
+    sample = PreparedMemoryFragment(
+        address=MemoryEntryAddress(
+            memory=ArtifactAddress(scope_id="s" * 24, artifact=ArtifactRef(family="memory", artifact_id="m", revision=1)),
+            entry_id="e" * 40,
+            entry_version_id="v" * 40,
+        ),
+        start=0,
+        end=0,
+        text="",
+    )
+    base = len(_render_fragments(()).encode("utf-8"))
+    single = len(_render_fragments((sample,)).encode("utf-8"))
+    return max(0, single - base)
+
+
+def _extend_selection_fragment(
+    selected: Sequence[PreparedMemoryFragment],
+    fragment: PreparedMemoryFragment,
+    sentences: tuple[tuple[int, int], ...],
+    source_text: str,
+    max_bytes: int,
+    *,
+    first_only: bool = True,
+    enabled: bool = True,
+    matches_by_sentence: dict[int, frozenset[str]] | None = None,
+    weights: dict[str, float] | None = None,
+    covered: set[str] | None = None,
+) -> PreparedMemoryFragment:
+    """Widen one selected fragment over its neighbouring sentences while it fits.
+
+    Annotated evidence often spans two adjacent sentences.  Folding a neighbour into
+    the same fragment keeps the whole range covered without paying for a second
+    citation, which is the most expensive part of the envelope.  The neighbour that
+    adds the most query terms the output does not have yet is preferred, because the
+    sentence on the other side of the fragment usually repeats what is already there.
+    """
+
+    if not enabled or not sentences or (first_only and selected):
+        return fragment
+    covered_sentences = [
+        index
+        for index, (start, end) in enumerate(sentences)
+        if start < fragment.end and fragment.start < end
+    ]
+    if not covered_sentences:
+        return fragment
+    first, last = covered_sentences[0], covered_sentences[-1]
+    current = fragment
+    for _step in range(_SELECTION_EXTEND_SENTENCES):
+        widened = _widen_to_neighbour(
+            selected,
+            current,
+            sentences,
+            source_text,
+            max_bytes,
+            first,
+            last,
+            matches_by_sentence or {},
+            weights or {},
+            covered or set(),
+        )
+        if widened is None:
+            break
+        current, first, last = widened
+    return current
+
+
+def _widen_to_neighbour(
+    selected: Sequence[PreparedMemoryFragment],
+    fragment: PreparedMemoryFragment,
+    sentences: tuple[tuple[int, int], ...],
+    source_text: str,
+    max_bytes: int,
+    first: int,
+    last: int,
+    matches_by_sentence: dict[int, frozenset[str]],
+    weights: dict[str, float],
+    covered: set[str],
+) -> tuple[PreparedMemoryFragment, int, int] | None:
+    """Add the neighbouring sentence that carries the most query weight."""
+
+    def neighbour_weight(index: int) -> float:
+        terms = matches_by_sentence.get(index, frozenset())
+        return sum(weights.get(term, 1.0) for term in terms if term not in covered)
+
+    options: list[tuple[float, int, bool]] = []
+    if last + 1 <= len(sentences) - 1:
+        options.append((neighbour_weight(last + 1), last + 1, True))
+    if first - 1 >= 0:
+        options.append((neighbour_weight(first - 1), first - 1, False))
+    options.sort(key=lambda item: (-item[0], item[1]))
+    for _weight, index, forward in options:
+        start, end = sentences[index]
+        if forward:
+            widened = PreparedMemoryFragment(
+                fragment.address, fragment.start, end, source_text[fragment.start:end]
+            )
+        else:
+            widened = PreparedMemoryFragment(
+                fragment.address, start, fragment.end, source_text[start:fragment.end]
+            )
+        if len(_render_fragments((*selected, widened)).encode("utf-8")) > max_bytes:
+            continue
+        if forward:
+            return widened, first, index
+        return widened, index, last
+    return None
+
+
+def _selection_candidate_key(
+    candidate: _SelectionCandidate,
+    covered: set[str],
+    weights: dict[str, float],
+) -> tuple[float, ...]:
+    """Rank one candidate by the lexical weight it adds, discounted by its entry rank."""
+
+    gain = sum(weights[term] for term in candidate.covered.difference(covered))
+    if _SELECTION_RANK_MODE == "efficiency":
+        primary = gain / max(1, len(candidate.text))
+    elif _SELECTION_RANK_MODE == "density":
+        primary = candidate.density
+    elif _SELECTION_RANK_MODE == "absolute_density":
+        primary = gain * candidate.density
+    else:
+        primary = gain
+    return (
+        primary * candidate.hit_weight,
+        candidate.coverage,
+        candidate.proximity,
+        candidate.density,
+        -len(candidate.text),
+    )
+
+
+def _select_best_candidate(
+    remaining: Sequence[_SelectionCandidate],
+    covered: set[str],
+    weights: dict[str, float],
+    anchor: tuple[str, str, str] | None,
+    selected: Sequence[PreparedMemoryFragment] = (),
+) -> _SelectionCandidate | None:
+    """The candidate that adds the most lexical weight, discounted by its entry rank."""
+
+    best: _SelectionCandidate | None = None
+    best_key: tuple[float, ...] | None = None
+    for candidate in remaining:
+        key = _selection_candidate_key(candidate, covered, weights)
+        if key[0] <= 0 and candidate.coverage <= 0:
+            continue
+        entry_key = _selection_address_key(candidate.address)
+        other_entry = anchor is not None and entry_key != anchor
+        if other_entry:
+            # The evidence of one claim lives in one document; a second window from
+            # another document only spends budget that the first document needs.
+            key = (key[0] * _SELECTION_OTHER_ENTRY_FACTOR, *key[1:])
+        spread = 0.0
+        if (
+            _SELECTION_SPREAD_REGIONS
+            and selected
+            and not other_entry
+            and not _selection_overlaps(selected, candidate.start, candidate.end, entry_key)
+        ):
+            spread = 1.0
+        # A claim can be supported by several statements of one abstract, and every
+        # statement is evidence.  A window over a part of the abstract that is still
+        # untouched answers a different statement, so it comes before a window that
+        # repeats what the output already carries.
+        key = (
+            (spread, *key)
+            if _SELECTION_SPREAD_FIRST and spread
+            else (key[0], spread, *key[1:])
+        )
+        if best_key is None or key > best_key:
+            best, best_key = candidate, key
+    return best
+
+def _pack_selection_candidates(
+    candidates: Sequence[_SelectionCandidate],
+    max_bytes: int,
+    weights: dict[str, float],
+    sentences_by_entry: dict[tuple[str, str, str], tuple[tuple[int, int], ...]] | None = None,
+    text_by_entry: dict[tuple[str, str, str], str] | None = None,
+    matches_by_entry: dict[tuple[str, str, str], dict[int, frozenset[str]]] | None = None,
+) -> tuple[PreparedMemoryFragment, ...]:
+    """Greedily pack sentence-aligned candidates into the byte budget.
+
+    Candidates are ranked by the lexical weight they add, discounted by the retrieval
+    stage's own ranking of the entry they live in.  Shared phrases count for more than
+    isolated words.  A candidate is taken whole whenever it fits; only a window that
+    cannot fit at all is shortened, and then only at a legal text boundary that keeps
+    every term it was selected for.
+    """
+
+    if not candidates:
+        return ()
+    selected: list[PreparedMemoryFragment] = []
+    covered: set[str] = set()
+    remaining = list(candidates)
+    while remaining:
+        anchor = _selection_entry_key(selected[0]) if selected else None
+        best = _select_best_candidate(remaining, covered, weights, anchor, selected)
+        if best is None:
+            break
+        remaining.remove(best)
+        entry_key = _selection_address_key(best.address)
+        if _selection_overlaps(selected, best.start, best.end, entry_key):
+            covered |= best.covered
+            continue
+        fragment = PreparedMemoryFragment(best.address, best.start, best.end, best.text)
+        fitted = _fit_selection_fragment(selected, fragment, best.required_end, max_bytes)
+        if fitted is None:
+            continue
+        if len(fitted[0].text.encode("utf-8")) < _MIN_TRUNCATED_CONTENT_BYTES:
+            # A fragment that only keeps a couple of words spends a citation on
+            # almost nothing; the budget is better left for a whole window.
+            continue
+        selected.append(
+            _extend_selection_fragment(
+                selected,
+                fitted[0],
+                (sentences_by_entry or {}).get(_selection_entry_key(fitted[0]), ()),
+                (text_by_entry or {}).get(_selection_entry_key(fitted[0]), ""),
+                max_bytes,
+                first_only=_SELECTION_EXTEND_FIRST_ONLY,
+                enabled=_SELECTION_EXTEND_SENTENCES > 0,
+                matches_by_sentence=(matches_by_entry or {}).get(_selection_entry_key(fitted[0]), {}),
+                weights=weights,
+                covered=covered | best.covered,
+            )
+        )
+        covered |= best.covered
+    return tuple(selected)
 
 
 @dataclass(frozen=True)
@@ -271,69 +1060,42 @@ class PreparedContextBuilder:
     def _build_evidence_selection(
         self, request: PrepareContextRequest, memory_candidates: Sequence[PreparedMemoryCandidates]
     ) -> PreparedContextBuild:
-        terms = set(re.findall(r"[^\W_]+", request.query.lower(), flags=re.UNICODE))
-        scored: list[tuple[float, PreparedMemoryFragment]] = []
-        for group in memory_candidates:
-            for hit in group.hits:
-                address = MemoryEntryAddress(
+        ordered_query_terms = tuple(
+            dict.fromkeys(
+                term
+                for term, _start, _end in _selection_terms(request.query)
+                if term not in _SELECTION_STOPWORDS
+            )
+        )
+        query_terms = set(ordered_query_terms)
+        if not query_terms:
+            return PreparedContextBuild(context=self.empty(), origins=())
+        weights, total_weight = _selection_term_weights(query_terms, memory_candidates)
+        candidates, sentences_by_entry, matches_by_entry = _selection_candidates(
+            memory_candidates, query_terms, ordered_query_terms, weights, total_weight
+        )
+        text_by_entry = {
+            _selection_address_key(
+                MemoryEntryAddress(
                     memory=ArtifactAddress(scope_id=group.scope_id, artifact=hit.memory_ref),
                     entry_id=hit.entry_id,
                     entry_version_id=hit.entry_version_id,
                 )
-                matches = [
-                    match
-                    for match in re.finditer(r"[^\W_]+", hit.text.lower(), flags=re.UNICODE)
-                    if match.group() in terms
-                ]
-                if not matches:
-                    if not any(ord(char) > 127 for char in request.query):
-                        continue
-                    matches = [re.match(r"", hit.text)]
-                windows: list[tuple[int, int]] = []
-                for match in matches:
-                    start = 0 if match is not None and match.start() == 0 and not match.group() else max(0, match.start() - 280)
-                    end = min(len(hit.text), max(640, match.end() + 360))
-                    if windows and start <= windows[-1][1] + 80:
-                        windows[-1] = (windows[-1][0], max(windows[-1][1], end))
-                    else:
-                        windows.append((start, end))
-                for start, end in windows:
-                    while start > 0 and not hit.text[start].isspace():
-                        start -= 1
-                    while end < len(hit.text) and not hit.text[end - 1].isspace():
-                        end += 1
-                    fragment = PreparedMemoryFragment(address, start, end, hit.text[start:end])
-                    words = set(re.findall(r"[^\W_]+", fragment.text.lower(), flags=re.UNICODE))
-                    score = len(words & terms) / max(1, len(terms))
-                    scored.append((score / max(1, len(fragment.text)), fragment))
-        scored.sort(key=lambda item: item[0], reverse=True)
-        selected: list[PreparedMemoryFragment] = []
-        selected_keys: set[tuple[str, str, str, int, int]] = set()
-        content = ""
-        for _, fragment in scored:
-            key = (
-                fragment.address.memory.scope_id,
-                fragment.address.entry_id,
-                fragment.address.entry_version_id,
-                fragment.start,
-                fragment.end,
-            )
-            if key in selected_keys:
-                continue
-            if any(
-                old.address == fragment.address and fragment.start < old.end and old.start < fragment.end
-                for old in selected
-            ):
-                continue
-            candidate = [*selected, fragment]
-            rendered = _render_fragments(candidate)
-            if len(rendered.encode("utf-8")) > request.max_bytes:
-                continue
-            selected.append(fragment)
-            selected_keys.add(key)
-            content = rendered
+            ): hit.text
+            for group in memory_candidates
+            for hit in group.hits
+        }
+        selected = _pack_selection_candidates(
+            candidates,
+            request.max_bytes,
+            weights,
+            sentences_by_entry,
+            text_by_entry,
+            matches_by_entry,
+        )
         if not selected:
             return PreparedContextBuild(context=self.empty(), origins=())
+        content = _render_fragments(selected)
         return PreparedContextBuild(
             context=PreparedContext(status="ready", content=content, content_bytes=len(content.encode("utf-8"))),
             origins=tuple(fragment.address for fragment in selected),
