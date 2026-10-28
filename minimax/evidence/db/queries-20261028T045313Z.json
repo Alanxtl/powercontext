@@ -1,0 +1,402 @@
+[
+  {
+    "ran_at": "2026-10-28T04:49:45+00:00",
+    "purpose": "fetch-documents",
+    "sql": "SELECT document_id, path, kind, content, 0.0 AS score FROM sdd_document WHERE path IN (:path_0, :path_1, :path_2)",
+    "params": "{'path_0': 'src/taskboard/cli.py', 'path_1': 'src/taskboard/model.py', 'path_2': 'src/taskboard/service.py'}",
+    "row_count": 3,
+    "elapsed_ms": 49
+  },
+  {
+    "ran_at": "2026-10-28T04:49:45+00:00",
+    "purpose": "find-related-tests",
+    "sql": "SELECT test_id, path, name, docstring, content, 0.0 AS score FROM sdd_test_case WHERE content LIKE :name_0 OR content LIKE :name_1 OR content LIKE :name_2 OR content LIKE :name_3 OR content LIKE :name_4 OR content LIKE :name_5 OR content LIKE :name_6 OR content LIKE :name_7 OR content LIKE :name_8 OR content LIKE :name_9",
+    "params": "{'name_0': '%list_tasks%', 'name_1': '%assignee%', 'name_2': '%status%', 'name_3': '%limit%', 'name_4': '%priority%', 'name_5': '%created_at%', 'name_6': '%list%', 'name_7': '%todo%', 'name_8': '%done%', 'name_9': '%ValueError%'}",
+    "row_count": 15,
+    "elapsed_ms": 17
+  },
+  {
+    "ran_at": "2026-10-28T04:49:45+00:00",
+    "purpose": "find-code-symbols",
+    "sql": "SELECT symbol_id, path, name, qualname, kind, start_line, end_line, signature, docstring, content, 0.0 AS score FROM sdd_code_symbol WHERE name IN (:name_0, :name_1, :name_2, :name_3, :name_4, :name_5, :name_6, :name_7, :name_8, :name_9)",
+    "params": "{'name_0': 'list_tasks', 'name_1': 'assignee', 'name_2': 'status', 'name_3': 'limit', 'name_4': 'priority', 'name_5': 'created_at', 'name_6': 'list', 'name_7': 'todo', 'name_8': 'done', 'name_9': 'ValueError'}",
+    "row_count": 1,
+    "elapsed_ms": 17
+  },
+  {
+    "ran_at": "2026-10-28T04:49:45+00:00",
+    "purpose": "select-test-cases",
+    "sql": "SELECT test_id, path, name, docstring, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_test_case WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+    "params": "{'match': 'filter filtered assignee task list add sort order status', 'limit': 8}",
+    "row_count": 8,
+    "elapsed_ms": 59
+  },
+  {
+    "ran_at": "2026-10-28T04:49:45+00:00",
+    "purpose": "select-code-symbols",
+    "sql": "SELECT symbol_id, path, name, qualname, kind, start_line, end_line, signature, docstring, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_code_symbol WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+    "params": "{'match': 'filter filtered assignee task list add sort order status', 'limit': 8}",
+    "row_count": 8,
+    "elapsed_ms": 61
+  },
+  {
+    "ran_at": "2026-10-28T04:49:45+00:00",
+    "purpose": "select-specifications",
+    "sql": "SELECT spec_id, path, title, status, applies_to, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_spec WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+    "params": "{'match': 'filter filtered assignee task list add sort order status', 'limit': 8}",
+    "row_count": 6,
+    "elapsed_ms": 57
+  },
+  {
+    "ran_at": "2026-10-28T04:49:26+00:00",
+    "purpose": "fetch-documents",
+    "sql": "SELECT document_id, path, kind, content, 0.0 AS score FROM sdd_document WHERE path IN (:path_0, :path_1, :path_2)",
+    "params": "{'path_0': 'src/taskboard/cli.py', 'path_1': 'src/taskboard/model.py', 'path_2': 'src/taskboard/service.py'}",
+    "row_count": 3,
+    "elapsed_ms": 49
+  },
+  {
+    "ran_at": "2026-10-28T04:49:26+00:00",
+    "purpose": "find-related-tests",
+    "sql": "SELECT test_id, path, name, docstring, content, 0.0 AS score FROM sdd_test_case WHERE content LIKE :name_0 OR content LIKE :name_1 OR content LIKE :name_2 OR content LIKE :name_3 OR content LIKE :name_4 OR content LIKE :name_5 OR content LIKE :name_6 OR content LIKE :name_7 OR content LIKE :name_8 OR content LIKE :name_9",
+    "params": "{'name_0': '%list_tasks%', 'name_1': '%assignee%', 'name_2': '%status%', 'name_3': '%limit%', 'name_4': '%priority%', 'name_5': '%created_at%', 'name_6': '%list%', 'name_7': '%todo%', 'name_8': '%done%', 'name_9': '%ValueError%'}",
+    "row_count": 15,
+    "elapsed_ms": 16
+  },
+  {
+    "ran_at": "2026-10-28T04:49:26+00:00",
+    "purpose": "find-code-symbols",
+    "sql": "SELECT symbol_id, path, name, qualname, kind, start_line, end_line, signature, docstring, content, 0.0 AS score FROM sdd_code_symbol WHERE name IN (:name_0, :name_1, :name_2, :name_3, :name_4, :name_5, :name_6, :name_7, :name_8, :name_9)",
+    "params": "{'name_0': 'list_tasks', 'name_1': 'assignee', 'name_2': 'status', 'name_3': 'limit', 'name_4': 'priority', 'name_5': 'created_at', 'name_6': 'list', 'name_7': 'todo', 'name_8': 'done', 'name_9': 'ValueError'}",
+    "row_count": 1,
+    "elapsed_ms": 19
+  },
+  {
+    "ran_at": "2026-10-28T04:49:26+00:00",
+    "purpose": "select-test-cases",
+    "sql": "SELECT test_id, path, name, docstring, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_test_case WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+    "params": "{'match': 'filter filtered assignee task list add sort order status', 'limit': 8}",
+    "row_count": 8,
+    "elapsed_ms": 59
+  },
+  {
+    "ran_at": "2026-10-28T04:49:26+00:00",
+    "purpose": "select-code-symbols",
+    "sql": "SELECT symbol_id, path, name, qualname, kind, start_line, end_line, signature, docstring, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_code_symbol WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+    "params": "{'match': 'filter filtered assignee task list add sort order status', 'limit': 8}",
+    "row_count": 8,
+    "elapsed_ms": 65
+  },
+  {
+    "ran_at": "2026-10-28T04:49:26+00:00",
+    "purpose": "select-specifications",
+    "sql": "SELECT spec_id, path, title, status, applies_to, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_spec WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+    "params": "{'match': 'filter filtered assignee task list add sort order status', 'limit': 8}",
+    "row_count": 6,
+    "elapsed_ms": 71
+  },
+  {
+    "ran_at": "2026-10-28T04:43:50+00:00",
+    "purpose": "fetch-documents",
+    "sql": "SELECT document_id, path, kind, content, 0.0 AS score FROM sdd_document WHERE path IN (:path_0, :path_1, :path_2)",
+    "params": "{'path_0': 'src/taskboard/cli.py', 'path_1': 'src/taskboard/model.py', 'path_2': 'src/taskboard/service.py'}",
+    "row_count": 3,
+    "elapsed_ms": 60
+  },
+  {
+    "ran_at": "2026-10-28T04:43:50+00:00",
+    "purpose": "find-related-tests",
+    "sql": "SELECT test_id, path, name, docstring, content, 0.0 AS score FROM sdd_test_case WHERE content LIKE :name_0 OR content LIKE :name_1 OR content LIKE :name_2 OR content LIKE :name_3 OR content LIKE :name_4 OR content LIKE :name_5 OR content LIKE :name_6 OR content LIKE :name_7 OR content LIKE :name_8 OR content LIKE :name_9",
+    "params": "{'name_0': '%list_tasks%', 'name_1': '%assignee%', 'name_2': '%status%', 'name_3': '%limit%', 'name_4': '%priority%', 'name_5': '%created_at%', 'name_6': '%list%', 'name_7': '%todo%', 'name_8': '%done%', 'name_9': '%ValueError%'}",
+    "row_count": 15,
+    "elapsed_ms": 18
+  },
+  {
+    "ran_at": "2026-10-28T04:43:50+00:00",
+    "purpose": "find-code-symbols",
+    "sql": "SELECT symbol_id, path, name, qualname, kind, start_line, end_line, signature, docstring, content, 0.0 AS score FROM sdd_code_symbol WHERE name IN (:name_0, :name_1, :name_2, :name_3, :name_4, :name_5, :name_6, :name_7, :name_8, :name_9)",
+    "params": "{'name_0': 'list_tasks', 'name_1': 'assignee', 'name_2': 'status', 'name_3': 'limit', 'name_4': 'priority', 'name_5': 'created_at', 'name_6': 'list', 'name_7': 'todo', 'name_8': 'done', 'name_9': 'ValueError'}",
+    "row_count": 1,
+    "elapsed_ms": 16
+  },
+  {
+    "ran_at": "2026-10-28T04:43:50+00:00",
+    "purpose": "select-test-cases",
+    "sql": "SELECT test_id, path, name, docstring, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_test_case WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+    "params": "{'match': 'filter filtered assignee task list add sort order status', 'limit': 8}",
+    "row_count": 8,
+    "elapsed_ms": 77
+  },
+  {
+    "ran_at": "2026-10-28T04:43:50+00:00",
+    "purpose": "select-code-symbols",
+    "sql": "SELECT symbol_id, path, name, qualname, kind, start_line, end_line, signature, docstring, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_code_symbol WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+    "params": "{'match': 'filter filtered assignee task list add sort order status', 'limit': 8}",
+    "row_count": 8,
+    "elapsed_ms": 163
+  },
+  {
+    "ran_at": "2026-10-28T04:43:49+00:00",
+    "purpose": "select-specifications",
+    "sql": "SELECT spec_id, path, title, status, applies_to, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_spec WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+    "params": "{'match': 'filter filtered assignee task list add sort order status', 'limit': 8}",
+    "row_count": 6,
+    "elapsed_ms": 81
+  },
+  {
+    "ran_at": "2026-10-28T04:43:30+00:00",
+    "purpose": "fetch-documents",
+    "sql": "SELECT document_id, path, kind, content, 0.0 AS score FROM sdd_document WHERE path IN (:path_0, :path_1, :path_2)",
+    "params": "{'path_0': 'src/taskboard/cli.py', 'path_1': 'src/taskboard/model.py', 'path_2': 'src/taskboard/service.py'}",
+    "row_count": 3,
+    "elapsed_ms": 60
+  },
+  {
+    "ran_at": "2026-10-28T04:43:30+00:00",
+    "purpose": "find-related-tests",
+    "sql": "SELECT test_id, path, name, docstring, content, 0.0 AS score FROM sdd_test_case WHERE content LIKE :name_0 OR content LIKE :name_1 OR content LIKE :name_2 OR content LIKE :name_3 OR content LIKE :name_4 OR content LIKE :name_5 OR content LIKE :name_6 OR content LIKE :name_7 OR content LIKE :name_8 OR content LIKE :name_9",
+    "params": "{'name_0': '%list_tasks%', 'name_1': '%assignee%', 'name_2': '%status%', 'name_3': '%limit%', 'name_4': '%priority%', 'name_5': '%created_at%', 'name_6': '%list%', 'name_7': '%todo%', 'name_8': '%done%', 'name_9': '%ValueError%'}",
+    "row_count": 15,
+    "elapsed_ms": 19
+  },
+  {
+    "ran_at": "2026-10-28T04:43:30+00:00",
+    "purpose": "find-code-symbols",
+    "sql": "SELECT symbol_id, path, name, qualname, kind, start_line, end_line, signature, docstring, content, 0.0 AS score FROM sdd_code_symbol WHERE name IN (:name_0, :name_1, :name_2, :name_3, :name_4, :name_5, :name_6, :name_7, :name_8, :name_9)",
+    "params": "{'name_0': 'list_tasks', 'name_1': 'assignee', 'name_2': 'status', 'name_3': 'limit', 'name_4': 'priority', 'name_5': 'created_at', 'name_6': 'list', 'name_7': 'todo', 'name_8': 'done', 'name_9': 'ValueError'}",
+    "row_count": 1,
+    "elapsed_ms": 20
+  },
+  {
+    "ran_at": "2026-10-28T04:43:30+00:00",
+    "purpose": "select-test-cases",
+    "sql": "SELECT test_id, path, name, docstring, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_test_case WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+    "params": "{'match': 'filter filtered assignee task list add sort order status', 'limit': 8}",
+    "row_count": 8,
+    "elapsed_ms": 68
+  },
+  {
+    "ran_at": "2026-10-28T04:43:30+00:00",
+    "purpose": "select-code-symbols",
+    "sql": "SELECT symbol_id, path, name, qualname, kind, start_line, end_line, signature, docstring, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_code_symbol WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+    "params": "{'match': 'filter filtered assignee task list add sort order status', 'limit': 8}",
+    "row_count": 8,
+    "elapsed_ms": 66
+  },
+  {
+    "ran_at": "2026-10-28T04:43:30+00:00",
+    "purpose": "select-specifications",
+    "sql": "SELECT spec_id, path, title, status, applies_to, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_spec WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+    "params": "{'match': 'filter filtered assignee task list add sort order status', 'limit': 8}",
+    "row_count": 6,
+    "elapsed_ms": 72
+  },
+  {
+    "ran_at": "2026-10-28T04:39:45+00:00",
+    "purpose": "fetch-documents",
+    "sql": "SELECT document_id, path, kind, content, 0.0 AS score FROM sdd_document WHERE path IN (:path_0, :path_1, :path_2)",
+    "params": "{'path_0': 'src/taskboard/cli.py', 'path_1': 'src/taskboard/model.py', 'path_2': 'src/taskboard/service.py'}",
+    "row_count": 3,
+    "elapsed_ms": 56
+  },
+  {
+    "ran_at": "2026-10-28T04:39:45+00:00",
+    "purpose": "find-related-tests",
+    "sql": "SELECT test_id, path, name, docstring, content, 0.0 AS score FROM sdd_test_case WHERE content LIKE :name_0 OR content LIKE :name_1 OR content LIKE :name_2 OR content LIKE :name_3 OR content LIKE :name_4 OR content LIKE :name_5 OR content LIKE :name_6 OR content LIKE :name_7 OR content LIKE :name_8 OR content LIKE :name_9",
+    "params": "{'name_0': '%list_tasks%', 'name_1': '%assignee%', 'name_2': '%status%', 'name_3': '%limit%', 'name_4': '%priority%', 'name_5': '%created_at%', 'name_6': '%list%', 'name_7': '%todo%', 'name_8': '%done%', 'name_9': '%ValueError%'}",
+    "row_count": 15,
+    "elapsed_ms": 15
+  },
+  {
+    "ran_at": "2026-10-28T04:39:45+00:00",
+    "purpose": "find-code-symbols",
+    "sql": "SELECT symbol_id, path, name, qualname, kind, start_line, end_line, signature, docstring, content, 0.0 AS score FROM sdd_code_symbol WHERE name IN (:name_0, :name_1, :name_2, :name_3, :name_4, :name_5, :name_6, :name_7, :name_8, :name_9)",
+    "params": "{'name_0': 'list_tasks', 'name_1': 'assignee', 'name_2': 'status', 'name_3': 'limit', 'name_4': 'priority', 'name_5': 'created_at', 'name_6': 'list', 'name_7': 'todo', 'name_8': 'done', 'name_9': 'ValueError'}",
+    "row_count": 1,
+    "elapsed_ms": 17
+  },
+  {
+    "ran_at": "2026-10-28T04:39:45+00:00",
+    "purpose": "select-test-cases",
+    "sql": "SELECT test_id, path, name, docstring, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_test_case WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+    "params": "{'match': 'filter filtered assignee task list add sort order status', 'limit': 8}",
+    "row_count": 8,
+    "elapsed_ms": 59
+  },
+  {
+    "ran_at": "2026-10-28T04:39:45+00:00",
+    "purpose": "select-code-symbols",
+    "sql": "SELECT symbol_id, path, name, qualname, kind, start_line, end_line, signature, docstring, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_code_symbol WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+    "params": "{'match': 'filter filtered assignee task list add sort order status', 'limit': 8}",
+    "row_count": 8,
+    "elapsed_ms": 62
+  },
+  {
+    "ran_at": "2026-10-28T04:39:44+00:00",
+    "purpose": "select-specifications",
+    "sql": "SELECT spec_id, path, title, status, applies_to, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_spec WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+    "params": "{'match': 'filter filtered assignee task list add sort order status', 'limit': 8}",
+    "row_count": 6,
+    "elapsed_ms": 65
+  },
+  {
+    "ran_at": "2026-10-28T04:39:26+00:00",
+    "purpose": "fetch-documents",
+    "sql": "SELECT document_id, path, kind, content, 0.0 AS score FROM sdd_document WHERE path IN (:path_0, :path_1, :path_2)",
+    "params": "{'path_0': 'src/taskboard/cli.py', 'path_1': 'src/taskboard/model.py', 'path_2': 'src/taskboard/service.py'}",
+    "row_count": 3,
+    "elapsed_ms": 47
+  },
+  {
+    "ran_at": "2026-10-28T04:39:26+00:00",
+    "purpose": "find-related-tests",
+    "sql": "SELECT test_id, path, name, docstring, content, 0.0 AS score FROM sdd_test_case WHERE content LIKE :name_0 OR content LIKE :name_1 OR content LIKE :name_2 OR content LIKE :name_3 OR content LIKE :name_4 OR content LIKE :name_5 OR content LIKE :name_6 OR content LIKE :name_7 OR content LIKE :name_8 OR content LIKE :name_9",
+    "params": "{'name_0': '%list_tasks%', 'name_1': '%assignee%', 'name_2': '%status%', 'name_3': '%limit%', 'name_4': '%priority%', 'name_5': '%created_at%', 'name_6': '%list%', 'name_7': '%todo%', 'name_8': '%done%', 'name_9': '%ValueError%'}",
+    "row_count": 15,
+    "elapsed_ms": 18
+  },
+  {
+    "ran_at": "2026-10-28T04:39:26+00:00",
+    "purpose": "find-code-symbols",
+    "sql": "SELECT symbol_id, path, name, qualname, kind, start_line, end_line, signature, docstring, content, 0.0 AS score FROM sdd_code_symbol WHERE name IN (:name_0, :name_1, :name_2, :name_3, :name_4, :name_5, :name_6, :name_7, :name_8, :name_9)",
+    "params": "{'name_0': 'list_tasks', 'name_1': 'assignee', 'name_2': 'status', 'name_3': 'limit', 'name_4': 'priority', 'name_5': 'created_at', 'name_6': 'list', 'name_7': 'todo', 'name_8': 'done', 'name_9': 'ValueError'}",
+    "row_count": 1,
+    "elapsed_ms": 17
+  },
+  {
+    "ran_at": "2026-10-28T04:39:26+00:00",
+    "purpose": "select-test-cases",
+    "sql": "SELECT test_id, path, name, docstring, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_test_case WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+    "params": "{'match': 'filter filtered assignee task list add sort order status', 'limit': 8}",
+    "row_count": 8,
+    "elapsed_ms": 61
+  },
+  {
+    "ran_at": "2026-10-28T04:39:26+00:00",
+    "purpose": "select-code-symbols",
+    "sql": "SELECT symbol_id, path, name, qualname, kind, start_line, end_line, signature, docstring, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_code_symbol WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+    "params": "{'match': 'filter filtered assignee task list add sort order status', 'limit': 8}",
+    "row_count": 8,
+    "elapsed_ms": 65
+  },
+  {
+    "ran_at": "2026-10-28T04:39:26+00:00",
+    "purpose": "select-specifications",
+    "sql": "SELECT spec_id, path, title, status, applies_to, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_spec WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+    "params": "{'match': 'filter filtered assignee task list add sort order status', 'limit': 8}",
+    "row_count": 6,
+    "elapsed_ms": 58
+  },
+  {
+    "ran_at": "2026-10-28T04:36:52+00:00",
+    "purpose": "find-related-tests",
+    "sql": "SELECT test_id, path, name, docstring, content, 0.0 AS score FROM sdd_test_case WHERE content LIKE :name_0 OR content LIKE :name_1 OR content LIKE :name_2 OR content LIKE :name_3 OR content LIKE :name_4 OR content LIKE :name_5 OR content LIKE :name_6 OR content LIKE :name_7 OR content LIKE :name_8 OR content LIKE :name_9",
+    "params": "{'name_0': '%list_tasks%', 'name_1': '%assignee%', 'name_2': '%status%', 'name_3': '%limit%', 'name_4': '%priority%', 'name_5': '%created_at%', 'name_6': '%list%', 'name_7': '%todo%', 'name_8': '%done%', 'name_9': '%ValueError%'}",
+    "row_count": 15,
+    "elapsed_ms": 21
+  },
+  {
+    "ran_at": "2026-10-28T04:36:52+00:00",
+    "purpose": "find-code-symbols",
+    "sql": "SELECT symbol_id, path, name, qualname, kind, start_line, end_line, signature, docstring, content, 0.0 AS score FROM sdd_code_symbol WHERE name IN (:name_0, :name_1, :name_2, :name_3, :name_4, :name_5, :name_6, :name_7, :name_8, :name_9)",
+    "params": "{'name_0': 'list_tasks', 'name_1': 'assignee', 'name_2': 'status', 'name_3': 'limit', 'name_4': 'priority', 'name_5': 'created_at', 'name_6': 'list', 'name_7': 'todo', 'name_8': 'done', 'name_9': 'ValueError'}",
+    "row_count": 1,
+    "elapsed_ms": 23
+  },
+  {
+    "ran_at": "2026-10-28T04:36:52+00:00",
+    "purpose": "select-test-cases",
+    "sql": "SELECT test_id, path, name, docstring, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_test_case WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+    "params": "{'match': 'filter filtered assignee task list add sort order status', 'limit': 8}",
+    "row_count": 8,
+    "elapsed_ms": 135
+  },
+  {
+    "ran_at": "2026-10-28T04:36:52+00:00",
+    "purpose": "select-code-symbols",
+    "sql": "SELECT symbol_id, path, name, qualname, kind, start_line, end_line, signature, docstring, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_code_symbol WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+    "params": "{'match': 'filter filtered assignee task list add sort order status', 'limit': 8}",
+    "row_count": 8,
+    "elapsed_ms": 112
+  },
+  {
+    "ran_at": "2026-10-28T04:36:52+00:00",
+    "purpose": "select-specifications",
+    "sql": "SELECT spec_id, path, title, status, applies_to, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_spec WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+    "params": "{'match': 'filter filtered assignee task list add sort order status', 'limit': 8}",
+    "row_count": 6,
+    "elapsed_ms": 81
+  },
+  {
+    "ran_at": "2026-10-28T04:36:02+00:00",
+    "purpose": "find-related-tests",
+    "sql": "SELECT test_id, path, name, docstring, content, 0.0 AS score FROM sdd_test_case WHERE content LIKE :name_0 OR content LIKE :name_1 OR content LIKE :name_2 OR content LIKE :name_3 OR content LIKE :name_4 OR content LIKE :name_5 OR content LIKE :name_6 OR content LIKE :name_7 OR content LIKE :name_8 OR content LIKE :name_9",
+    "params": "{'name_0': '%list_tasks%', 'name_1': '%assignee%', 'name_2': '%status%', 'name_3': '%limit%', 'name_4': '%priority%', 'name_5': '%created_at%', 'name_6': '%list%', 'name_7': '%todo%', 'name_8': '%done%', 'name_9': '%ValueError%'}",
+    "row_count": 15,
+    "elapsed_ms": 16
+  },
+  {
+    "ran_at": "2026-10-28T04:36:02+00:00",
+    "purpose": "find-code-symbols",
+    "sql": "SELECT symbol_id, path, name, qualname, kind, start_line, end_line, signature, docstring, content, 0.0 AS score FROM sdd_code_symbol WHERE name IN (:name_0, :name_1, :name_2, :name_3, :name_4, :name_5, :name_6, :name_7, :name_8, :name_9)",
+    "params": "{'name_0': 'list_tasks', 'name_1': 'assignee', 'name_2': 'status', 'name_3': 'limit', 'name_4': 'priority', 'name_5': 'created_at', 'name_6': 'list', 'name_7': 'todo', 'name_8': 'done', 'name_9': 'ValueError'}",
+    "row_count": 1,
+    "elapsed_ms": 17
+  },
+  {
+    "ran_at": "2026-10-28T04:36:02+00:00",
+    "purpose": "select-test-cases",
+    "sql": "SELECT test_id, path, name, docstring, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_test_case WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+    "params": "{'match': 'filter filtered assignee task list add sort order status', 'limit': 8}",
+    "row_count": 8,
+    "elapsed_ms": 62
+  },
+  {
+    "ran_at": "2026-10-28T04:36:02+00:00",
+    "purpose": "select-code-symbols",
+    "sql": "SELECT symbol_id, path, name, qualname, kind, start_line, end_line, signature, docstring, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_code_symbol WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+    "params": "{'match': 'filter filtered assignee task list add sort order status', 'limit': 8}",
+    "row_count": 8,
+    "elapsed_ms": 64
+  },
+  {
+    "ran_at": "2026-10-28T04:36:02+00:00",
+    "purpose": "select-specifications",
+    "sql": "SELECT spec_id, path, title, status, applies_to, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_spec WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+    "params": "{'match': 'filter filtered assignee task list add sort order status', 'limit': 8}",
+    "row_count": 6,
+    "elapsed_ms": 59
+  },
+  {
+    "ran_at": "2026-10-28T04:35:44+00:00",
+    "purpose": "find-related-tests",
+    "sql": "SELECT test_id, path, name, docstring, content, 0.0 AS score FROM sdd_test_case WHERE content LIKE :name_0 OR content LIKE :name_1 OR content LIKE :name_2 OR content LIKE :name_3 OR content LIKE :name_4 OR content LIKE :name_5 OR content LIKE :name_6 OR content LIKE :name_7 OR content LIKE :name_8 OR content LIKE :name_9",
+    "params": "{'name_0': '%list_tasks%', 'name_1': '%assignee%', 'name_2': '%status%', 'name_3': '%limit%', 'name_4': '%priority%', 'name_5': '%created_at%', 'name_6': '%list%', 'name_7': '%todo%', 'name_8': '%done%', 'name_9': '%ValueError%'}",
+    "row_count": 15,
+    "elapsed_ms": 16
+  },
+  {
+    "ran_at": "2026-10-28T04:35:44+00:00",
+    "purpose": "find-code-symbols",
+    "sql": "SELECT symbol_id, path, name, qualname, kind, start_line, end_line, signature, docstring, content, 0.0 AS score FROM sdd_code_symbol WHERE name IN (:name_0, :name_1, :name_2, :name_3, :name_4, :name_5, :name_6, :name_7, :name_8, :name_9)",
+    "params": "{'name_0': 'list_tasks', 'name_1': 'assignee', 'name_2': 'status', 'name_3': 'limit', 'name_4': 'priority', 'name_5': 'created_at', 'name_6': 'list', 'name_7': 'todo', 'name_8': 'done', 'name_9': 'ValueError'}",
+    "row_count": 1,
+    "elapsed_ms": 18
+  },
+  {
+    "ran_at": "2026-10-28T04:35:44+00:00",
+    "purpose": "select-test-cases",
+    "sql": "SELECT test_id, path, name, docstring, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_test_case WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+    "params": "{'match': 'filter filtered assignee task list add sort order status', 'limit': 8}",
+    "row_count": 8,
+    "elapsed_ms": 63
+  },
+  {
+    "ran_at": "2026-10-28T04:35:44+00:00",
+    "purpose": "select-code-symbols",
+    "sql": "SELECT symbol_id, path, name, qualname, kind, start_line, end_line, signature, docstring, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_code_symbol WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+    "params": "{'match': 'filter filtered assignee task list add sort order status', 'limit': 8}",
+    "row_count": 8,
+    "elapsed_ms": 64
+  }
+]

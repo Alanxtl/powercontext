@@ -1,0 +1,9 @@
+# Runtime state of the embedded seekdb instance (recreated by `import`).
+.state/
+
+# Python caches and local environments.
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+*.egg-info/

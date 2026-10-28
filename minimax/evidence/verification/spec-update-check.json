@@ -1,0 +1,16 @@
+{
+  "check": "specification-update-is-picked-up",
+  "with_updated_spec": {
+    "import_exit_code": 0,
+    "context_file": "context-20261028T050311Z.md",
+    "contains_marker": true,
+    "contains_original_line": true
+  },
+  "after_reverting_spec": {
+    "import_exit_code": 0,
+    "context_file": "context-20261028T050417Z.md",
+    "contains_marker": false,
+    "contains_original_line": true
+  },
+  "passed": true
+}

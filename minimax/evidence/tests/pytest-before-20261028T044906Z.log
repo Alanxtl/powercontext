@@ -1,0 +1,116 @@
+FFFFFFFFF.........                                                       [100%]
+================================== FAILURES ===================================
+_____________ test_filter_by_assignee_returns_only_matching_tasks _____________
+
+service = <taskboard.service.TaskBoardService object at 0x000001FDD6233010>
+
+    def test_filter_by_assignee_returns_only_matching_tasks(service: TaskBoardService) -> None:
+>       tasks = service.list_tasks(assignee="bob")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: TaskBoardService.list_tasks() got an unexpected keyword argument 'assignee'
+
+tests\test_assignee_filter.py:26: TypeError
+_________________ test_filter_by_assignee_is_case_insensitive _________________
+
+service = <taskboard.service.TaskBoardService object at 0x000001FDD6233790>
+
+    def test_filter_by_assignee_is_case_insensitive(service: TaskBoardService) -> None:
+        # SPEC-FILTER-001 compares case-insensitively, so "Alice" (T-1) and "alice" (T-4) both match.
+>       assert [task.id for task in service.list_tasks(assignee="ALICE")] == ["T-4", "T-1"]
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: TaskBoardService.list_tasks() got an unexpected keyword argument 'assignee'
+
+tests\test_assignee_filter.py:32: TypeError
+____________ test_filter_by_assignee_trims_surrounding_whitespace _____________
+
+service = <taskboard.service.TaskBoardService object at 0x000001FDD6205710>
+
+    def test_filter_by_assignee_trims_surrounding_whitespace(service: TaskBoardService) -> None:
+>       assert [task.id for task in service.list_tasks(assignee="  bob  ")] == ["T-2"]
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: TaskBoardService.list_tasks() got an unexpected keyword argument 'assignee'
+
+tests\test_assignee_filter.py:37: TypeError
+________ test_unassigned_task_is_not_returned_for_a_specific_assignee _________
+
+service = <taskboard.service.TaskBoardService object at 0x000001FDD624A810>
+
+    def test_unassigned_task_is_not_returned_for_a_specific_assignee(service: TaskBoardService) -> None:
+>       assert "T-3" not in [task.id for task in service.list_tasks(assignee="alice")]
+                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: TaskBoardService.list_tasks() got an unexpected keyword argument 'assignee'
+
+tests\test_assignee_filter.py:41: TypeError
+________________ test_blank_assignee_is_treated_as_no_filter[] ________________
+
+service = <taskboard.service.TaskBoardService object at 0x000001FDD6206050>
+blank = ''
+
+    @pytest.mark.parametrize("blank", ["", "   ", "\t\n"])
+    def test_blank_assignee_is_treated_as_no_filter(service: TaskBoardService, blank: str) -> None:
+>       assert [task.id for task in service.list_tasks(assignee=blank)] == [
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            task.id for task in service.list_tasks()
+        ]
+E       TypeError: TaskBoardService.list_tasks() got an unexpected keyword argument 'assignee'
+
+tests\test_assignee_filter.py:46: TypeError
+______________ test_blank_assignee_is_treated_as_no_filter[   ] _______________
+
+service = <taskboard.service.TaskBoardService object at 0x000001FDD6207790>
+blank = '   '
+
+    @pytest.mark.parametrize("blank", ["", "   ", "\t\n"])
+    def test_blank_assignee_is_treated_as_no_filter(service: TaskBoardService, blank: str) -> None:
+>       assert [task.id for task in service.list_tasks(assignee=blank)] == [
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            task.id for task in service.list_tasks()
+        ]
+E       TypeError: TaskBoardService.list_tasks() got an unexpected keyword argument 'assignee'
+
+tests\test_assignee_filter.py:46: TypeError
+______________ test_blank_assignee_is_treated_as_no_filter[\t\n] ______________
+
+service = <taskboard.service.TaskBoardService object at 0x000001FDD6249CD0>
+blank = '\t\n'
+
+    @pytest.mark.parametrize("blank", ["", "   ", "\t\n"])
+    def test_blank_assignee_is_treated_as_no_filter(service: TaskBoardService, blank: str) -> None:
+>       assert [task.id for task in service.list_tasks(assignee=blank)] == [
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            task.id for task in service.list_tasks()
+        ]
+E       TypeError: TaskBoardService.list_tasks() got an unexpected keyword argument 'assignee'
+
+tests\test_assignee_filter.py:46: TypeError
+__________________ test_assignee_combines_with_status_filter __________________
+
+service = <taskboard.service.TaskBoardService object at 0x000001FDD623CF10>
+
+    def test_assignee_combines_with_status_filter(service: TaskBoardService) -> None:
+>       tasks = service.list_tasks(status="todo", assignee="alice")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: TaskBoardService.list_tasks() got an unexpected keyword argument 'assignee'
+
+tests\test_assignee_filter.py:52: TypeError
+______________________ test_assignee_combines_with_limit ______________________
+
+service = <taskboard.service.TaskBoardService object at 0x000001FDD6207C10>
+
+    def test_assignee_combines_with_limit(service: TaskBoardService) -> None:
+>       tasks = service.list_tasks(assignee="alice", limit=1)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: TaskBoardService.list_tasks() got an unexpected keyword argument 'assignee'
+
+tests\test_assignee_filter.py:57: TypeError
+=========================== short test summary info ===========================
+FAILED tests/test_assignee_filter.py::test_filter_by_assignee_returns_only_matching_tasks
+FAILED tests/test_assignee_filter.py::test_filter_by_assignee_is_case_insensitive
+FAILED tests/test_assignee_filter.py::test_filter_by_assignee_trims_surrounding_whitespace
+FAILED tests/test_assignee_filter.py::test_unassigned_task_is_not_returned_for_a_specific_assignee
+FAILED tests/test_assignee_filter.py::test_blank_assignee_is_treated_as_no_filter[]
+FAILED tests/test_assignee_filter.py::test_blank_assignee_is_treated_as_no_filter[   ]
+FAILED tests/test_assignee_filter.py::test_blank_assignee_is_treated_as_no_filter[\t\n]
+FAILED tests/test_assignee_filter.py::test_assignee_combines_with_status_filter
+FAILED tests/test_assignee_filter.py::test_assignee_combines_with_limit - Typ...
+9 failed, 9 passed in 0.90s

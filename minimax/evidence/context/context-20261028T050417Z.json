@@ -1,0 +1,285 @@
+{
+  "generated_at": "20261028T050417Z",
+  "task": "为任务列表增加按负责人过滤能力，并保持既有排序与状态过滤行为不变",
+  "context": {
+    "task": "为任务列表增加按负责人过滤能力，并保持既有排序与状态过滤行为不变",
+    "search_terms": [
+      "filter",
+      "filtered",
+      "assignee",
+      "task",
+      "list",
+      "add",
+      "sort",
+      "order",
+      "status"
+    ],
+    "citations": [
+      {
+        "kind": "spec",
+        "id": "SPEC-FILTER-003",
+        "path": "spec/SPEC-FILTER-003.md",
+        "title": "负责人过滤与其它过滤条件组合"
+      },
+      {
+        "kind": "spec",
+        "id": "SPEC-FILTER-002",
+        "path": "spec/SPEC-FILTER-002.md",
+        "title": "空白负责人输入的边界行为"
+      },
+      {
+        "kind": "spec",
+        "id": "SPEC-CORE-001",
+        "path": "spec/SPEC-CORE-001.md",
+        "title": "任务列表默认排序"
+      },
+      {
+        "kind": "spec",
+        "id": "SPEC-FILTER-001",
+        "path": "spec/SPEC-FILTER-001.md",
+        "title": "按负责人过滤"
+      },
+      {
+        "kind": "spec",
+        "id": "SPEC-CORE-002",
+        "path": "spec/SPEC-CORE-002.md",
+        "title": "任务状态过滤"
+      },
+      {
+        "kind": "spec",
+        "id": "SPEC-CORE-003",
+        "path": "spec/SPEC-CORE-003.md",
+        "title": "结果条数限制"
+      },
+      {
+        "kind": "code",
+        "id": "src/taskboard/service.py::TaskBoardService.list_tasks",
+        "path": "src/taskboard/service.py",
+        "title": "TaskBoardService.list_tasks (list_tasks)"
+      },
+      {
+        "kind": "code",
+        "id": "src/taskboard/service.py::TaskBoardService.__init__",
+        "path": "src/taskboard/service.py",
+        "title": "TaskBoardService.__init__ (__init__)"
+      },
+      {
+        "kind": "code",
+        "id": "src/taskboard/service.py::TaskBoardService",
+        "path": "src/taskboard/service.py",
+        "title": "TaskBoardService (TaskBoardService)"
+      },
+      {
+        "kind": "code",
+        "id": "src/taskboard/service.py::TaskBoardService.complete_task",
+        "path": "src/taskboard/service.py",
+        "title": "TaskBoardService.complete_task (complete_task)"
+      },
+      {
+        "kind": "code",
+        "id": "src/taskboard/model.py::Task",
+        "path": "src/taskboard/model.py",
+        "title": "Task (Task)"
+      },
+      {
+        "kind": "code",
+        "id": "src/taskboard/cli.py::build_demo_service",
+        "path": "src/taskboard/cli.py",
+        "title": "build_demo_service (build_demo_service)"
+      },
+      {
+        "kind": "code",
+        "id": "src/taskboard/cli.py::main",
+        "path": "src/taskboard/cli.py",
+        "title": "main (main)"
+      },
+      {
+        "kind": "code",
+        "id": "src/taskboard/model.py::Task.__post_init__",
+        "path": "src/taskboard/model.py",
+        "title": "Task.__post_init__ (__post_init__)"
+      },
+      {
+        "kind": "test",
+        "id": "tests/test_assignee_filter.py::test_assignee_combines_with_status_filter",
+        "path": "tests/test_assignee_filter.py",
+        "title": "test_assignee_combines_with_status_filter"
+      },
+      {
+        "kind": "test",
+        "id": "tests/test_assignee_filter.py::test_blank_assignee_is_treated_as_no_filter",
+        "path": "tests/test_assignee_filter.py",
+        "title": "test_blank_assignee_is_treated_as_no_filter"
+      },
+      {
+        "kind": "test",
+        "id": "tests/test_assignee_filter.py::test_filter_by_assignee_is_case_insensitive",
+        "path": "tests/test_assignee_filter.py",
+        "title": "test_filter_by_assignee_is_case_insensitive"
+      },
+      {
+        "kind": "test",
+        "id": "tests/test_assignee_filter.py::test_filter_by_assignee_trims_surrounding_whitespace",
+        "path": "tests/test_assignee_filter.py",
+        "title": "test_filter_by_assignee_trims_surrounding_whitespace"
+      },
+      {
+        "kind": "test",
+        "id": "tests/test_taskboard.py::test_complete_task_marks_task_done",
+        "path": "tests/test_taskboard.py",
+        "title": "test_complete_task_marks_task_done"
+      },
+      {
+        "kind": "test",
+        "id": "tests/test_taskboard.py::test_duplicate_task_id_is_rejected",
+        "path": "tests/test_taskboard.py",
+        "title": "test_duplicate_task_id_is_rejected"
+      },
+      {
+        "kind": "test",
+        "id": "tests/test_taskboard.py::test_status_filter_returns_only_matching_status",
+        "path": "tests/test_taskboard.py",
+        "title": "test_status_filter_returns_only_matching_status"
+      },
+      {
+        "kind": "test",
+        "id": "tests/test_taskboard.py::test_unknown_status_raises_value_error",
+        "path": "tests/test_taskboard.py",
+        "title": "test_unknown_status_raises_value_error"
+      },
+      {
+        "kind": "file",
+        "id": "src/taskboard/cli.py",
+        "path": "src/taskboard/cli.py",
+        "title": "src/taskboard/cli.py（code）"
+      },
+      {
+        "kind": "file",
+        "id": "src/taskboard/model.py",
+        "path": "src/taskboard/model.py",
+        "title": "src/taskboard/model.py（code）"
+      },
+      {
+        "kind": "file",
+        "id": "src/taskboard/service.py",
+        "path": "src/taskboard/service.py",
+        "title": "src/taskboard/service.py（code）"
+      }
+    ],
+    "sections": {
+      "specs": [
+        "SPEC-FILTER-003",
+        "SPEC-FILTER-002",
+        "SPEC-CORE-001",
+        "SPEC-FILTER-001",
+        "SPEC-CORE-002",
+        "SPEC-CORE-003"
+      ],
+      "code": [
+        "src/taskboard/service.py::TaskBoardService.list_tasks",
+        "src/taskboard/service.py::TaskBoardService.__init__",
+        "src/taskboard/service.py::TaskBoardService",
+        "src/taskboard/service.py::TaskBoardService.complete_task",
+        "src/taskboard/model.py::Task",
+        "src/taskboard/cli.py::build_demo_service",
+        "src/taskboard/cli.py::main",
+        "src/taskboard/model.py::Task.__post_init__"
+      ],
+      "tests": [
+        "tests/test_assignee_filter.py::test_assignee_combines_with_status_filter",
+        "tests/test_assignee_filter.py::test_blank_assignee_is_treated_as_no_filter",
+        "tests/test_assignee_filter.py::test_filter_by_assignee_is_case_insensitive",
+        "tests/test_assignee_filter.py::test_filter_by_assignee_trims_surrounding_whitespace",
+        "tests/test_taskboard.py::test_complete_task_marks_task_done",
+        "tests/test_taskboard.py::test_duplicate_task_id_is_rejected",
+        "tests/test_taskboard.py::test_status_filter_returns_only_matching_status",
+        "tests/test_taskboard.py::test_unknown_status_raises_value_error"
+      ],
+      "files": [
+        "src/taskboard/cli.py",
+        "src/taskboard/model.py",
+        "src/taskboard/service.py"
+      ]
+    }
+  },
+  "database_queries": [
+    {
+      "purpose": "select-specifications",
+      "sql": "SELECT spec_id, path, title, status, applies_to, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_spec WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+      "params": {
+        "match": "filter filtered assignee task list add sort order status",
+        "limit": 8
+      },
+      "row_count": 6,
+      "elapsed_ms": 50.721
+    },
+    {
+      "purpose": "select-code-symbols",
+      "sql": "SELECT symbol_id, path, name, qualname, kind, start_line, end_line, signature, docstring, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_code_symbol WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+      "params": {
+        "match": "filter filtered assignee task list add sort order status",
+        "limit": 8
+      },
+      "row_count": 8,
+      "elapsed_ms": 51.934
+    },
+    {
+      "purpose": "select-test-cases",
+      "sql": "SELECT test_id, path, name, docstring, content, MATCH(content) AGAINST (:match IN BOOLEAN MODE) AS score FROM sdd_test_case WHERE MATCH(content) AGAINST (:match IN BOOLEAN MODE) ORDER BY score DESC LIMIT :limit",
+      "params": {
+        "match": "filter filtered assignee task list add sort order status",
+        "limit": 8
+      },
+      "row_count": 8,
+      "elapsed_ms": 51.099
+    },
+    {
+      "purpose": "find-code-symbols",
+      "sql": "SELECT symbol_id, path, name, qualname, kind, start_line, end_line, signature, docstring, content, 0.0 AS score FROM sdd_code_symbol WHERE name IN (:name_0, :name_1, :name_2, :name_3, :name_4, :name_5, :name_6, :name_7, :name_8, :name_9)",
+      "params": {
+        "name_0": "list_tasks",
+        "name_1": "assignee",
+        "name_2": "status",
+        "name_3": "limit",
+        "name_4": "priority",
+        "name_5": "created_at",
+        "name_6": "list",
+        "name_7": "todo",
+        "name_8": "done",
+        "name_9": "ValueError"
+      },
+      "row_count": 1,
+      "elapsed_ms": 15.457
+    },
+    {
+      "purpose": "find-related-tests",
+      "sql": "SELECT test_id, path, name, docstring, content, 0.0 AS score FROM sdd_test_case WHERE content LIKE :name_0 OR content LIKE :name_1 OR content LIKE :name_2 OR content LIKE :name_3 OR content LIKE :name_4 OR content LIKE :name_5 OR content LIKE :name_6 OR content LIKE :name_7 OR content LIKE :name_8 OR content LIKE :name_9",
+      "params": {
+        "name_0": "%list_tasks%",
+        "name_1": "%assignee%",
+        "name_2": "%status%",
+        "name_3": "%limit%",
+        "name_4": "%priority%",
+        "name_5": "%created_at%",
+        "name_6": "%list%",
+        "name_7": "%todo%",
+        "name_8": "%done%",
+        "name_9": "%ValueError%"
+      },
+      "row_count": 15,
+      "elapsed_ms": 16.201
+    },
+    {
+      "purpose": "fetch-documents",
+      "sql": "SELECT document_id, path, kind, content, 0.0 AS score FROM sdd_document WHERE path IN (:path_0, :path_1, :path_2)",
+      "params": {
+        "path_0": "src/taskboard/cli.py",
+        "path_1": "src/taskboard/model.py",
+        "path_2": "src/taskboard/service.py"
+      },
+      "row_count": 3,
+      "elapsed_ms": 42.982
+    }
+  ],
+  "markdown": "# 开发上下文（规格驱动开发）\n\n## 1. 本次任务\n\n为任务列表增加按负责人过滤能力，并保持既有排序与状态过滤行为不变\n\n## 2. 适用的规格条目\n\n### SPEC-FILTER-003 — 负责人过滤与其它过滤条件组合\n- 来源：`spec/SPEC-FILTER-003.md`\n- 状态：待实现\n- 适用范围：`TaskBoardService.list_tasks`\n- 选中原因：specification mentions spec/SPEC-FILTER-003.md（检索得分 1.277152）\n\n```markdown\n# SPEC-FILTER-003 负责人过滤与其它过滤条件组合\n\n- 标识：SPEC-FILTER-003\n- 状态：待实现\n- 适用范围：`TaskBoardService.list_tasks`\n\n## 需求\n\n`assignee` 过滤必须与 `status` 过滤、`limit` 限制同时可用，多个条件之间是「与」关系。\n\n## 不变量\n\n- 同时给出 `status` 与 `assignee` 时，返回同时满足两个条件的任务。\n- `limit` 在过滤之后生效：先过滤，再截断。\n\n## 验收要点\n\n- `list_tasks(status=\"todo\", assignee=\"alice\")` 返回既未完成又属于 Alice 的任务。\n- `list_tasks(assignee=\"alice\", limit=1)` 在过滤后只保留第一条。\n```\n### SPEC-FILTER-002 — 空白负责人输入的边界行为\n- 来源：`spec/SPEC-FILTER-002.md`\n- 状态：待实现\n- 适用范围：`TaskBoardService.list_tasks`\n- 选中原因：specification mentions spec/SPEC-FILTER-002.md（检索得分 0.821832）\n\n```markdown\n# SPEC-FILTER-002 空白负责人输入的边界行为\n\n- 标识：SPEC-FILTER-002\n- 状态：待实现\n- 适用范围：`TaskBoardService.list_tasks`\n\n## 需求\n\n`assignee` 传入空白字符串或纯空白字符（去除首尾空白后为空）时，视为「未指定负责人过滤」，返回全部任务，与不传 `assignee` 的结果一致。\n\n## 不变量\n\n- 不得因为空白输入抛出异常，也不得返回空列表。\n- 不得把空白输入当作「只匹配未指派任务」。\n\n## 验收要点\n\n- `assignee=\"\"` 与 `assignee=\"   \"` 的返回结果与不传 `assignee` 完全一致。\n- `assignee=\"\\t\\n\"` 同样按未指定处理。\n```\n### SPEC-CORE-001 — 任务列表默认排序\n- 来源：`spec/SPEC-CORE-001.md`\n- 状态：生效\n- 适用范围：`TaskBoardService.list_tasks`\n- 选中原因：specification mentions spec/SPEC-CORE-001.md（检索得分 0.748278）\n\n```markdown\n# SPEC-CORE-001 任务列表默认排序\n\n- 标识：SPEC-CORE-001\n- 状态：生效\n- 适用范围：`TaskBoardService.list_tasks`\n\n## 需求\n\n`list_tasks` 返回的任务必须按 `priority` 降序排列；`priority` 相同时按 `created_at` 升序排列（先创建者在前）。\n\n## 不变量\n\n- 返回结果始终是新的 `list`，调用方修改返回值不得影响服务内部状态。\n- 返回顺序在相同输入下必须稳定可复现。\n\n## 验收要点\n\n- 同一批任务以不同顺序加入服务，`list_tasks()` 的输出顺序完全一致。\n```\n### SPEC-FILTER-001 — 按负责人过滤\n- 来源：`spec/SPEC-FILTER-001.md`\n- 状态：待实现\n- 适用范围：`TaskBoardService.list_tasks`\n- 选中原因：specification mentions spec/SPEC-FILTER-001.md（检索得分 0.72456）\n\n```markdown\n# SPEC-FILTER-001 按负责人过滤\n\n- 标识：SPEC-FILTER-001\n- 状态：待实现\n- 适用范围：`TaskBoardService.list_tasks`\n\n## 需求\n\n`list_tasks` 必须支持 `assignee` 关键字参数，用于按任务负责人过滤：\n\n- 只返回 `assignee` 与给定值相同的任务；\n- 比较时忽略大小写；\n- 比较前去除给定值两端空白；\n- 未指派（`assignee is None`）的任务永远不出现在任何具体负责人的过滤结果中。\n\n## 不变量\n\n- 未传 `assignee` 时行为不变，返回全部任务（SPEC-CORE-001 / SPEC-CORE-002 不受影响）。\n- 过滤结果仍按 SPEC-CORE-001 的默认排序返回。\n\n## 验收要点\n\n- `assignee=\"alice\"` 只返回负责人为 Alice 的任务。\n- `assignee=\"ALICE\"` 与 `assignee=\"alice\"` 返回结果一致。\n- 未指派的任务不出现在任何具体负责人过滤结果中。\n```\n### SPEC-CORE-002 — 任务状态过滤\n- 来源：`spec/SPEC-CORE-002.md`\n- 状态：生效\n- 适用范围：`TaskBoardService.list_tasks`\n- 选中原因：specification mentions spec/SPEC-CORE-002.md（检索得分 0.694298）\n\n```markdown\n# SPEC-CORE-002 任务状态过滤\n\n- 标识：SPEC-CORE-002\n- 状态：生效\n- 适用范围：`TaskBoardService.list_tasks`\n\n## 需求\n\n`list_tasks(status=...)` 按任务状态过滤。合法取值为 `todo` 与 `done`；其它取值必须抛出 `ValueError`。\n\n## 不变量\n\n- 未传 `status` 时不过滤状态，返回全部任务。\n- 状态过滤与默认排序（SPEC-CORE-001）同时生效。\n\n## 验收要点\n\n- `status=\"todo\"` 只返回未完成任务。\n- `status=\"archived\"` 抛出 `ValueError`，而不是静默返回空列表。\n```\n### SPEC-CORE-003 — 结果条数限制\n- 来源：`spec/SPEC-CORE-003.md`\n- 状态：生效\n- 适用范围：`TaskBoardService.list_tasks`\n- 选中原因：specification mentions spec/SPEC-CORE-003.md（检索得分 0.126147）\n\n```markdown\n# SPEC-CORE-003 结果条数限制\n\n- 标识：SPEC-CORE-003\n- 状态：生效\n- 适用范围：`TaskBoardService.list_tasks`\n\n## 需求\n\n`limit` 用于限制返回条数：\n\n- `limit=None` 表示不限制；\n- `limit` 必须是不小于 1 的整数，否则抛出 `ValueError`。\n\n## 不变量\n\n- `limit` 在过滤与排序之后生效（见 SPEC-FILTER-003）。\n\n## 验收要点\n\n- `limit=0` 与 `limit=-1` 抛出 `ValueError`，不返回空列表。\n- `limit` 大于实际条数时返回全部结果，不报错。\n```\n\n## 3. 需要修改的代码\n\n### TaskBoardService.list_tasks\n- 来源：`src/taskboard/service.py` L55-L99\n- 符号：def list_tasks(self, *, status: str | None=None, assignee: str | None=None, limit: int | None=None)\n- 选中原因：referenced by the selected specification（检索得分 1.5）\n\n```python\ndef list_tasks(\n        self,\n        *,\n        status: str | None = None,\n        assignee: str | None = None,\n        limit: int | None = None,\n    ) -> list[Task]:\n        \"\"\"Return tasks ordered by priority (desc) then creation time (asc).\n\n        ``status`` restricts the result to one task status (SPEC-CORE-002).\n        ``assignee`` restricts the result by owner, ignoring case and trimming\n        surrounding whitespace; a blank value does not apply an owner filter\n        (SPEC-FILTER-001, SPEC-FILTER-002). ``limit`` caps the number of\n        returned tasks after filtering and sorting (SPEC-CORE-003).\n        \"\"\"\n\n        if status is not None and status not in TASK_STATUSES:\n            raise ValueError(f\"unsupported task status: {status!r}\")\n        if limit is not None and (\n            not isinstance(limit, int) or isinstance(limit, bool) or limit < 1\n        ):\n            raise ValueError(f\"limit must be a positive integer, got {limit!r}\")\n\n        assignee_filter: str | None = None\n        if assignee is not None:\n            normalized_assignee = assignee.strip().casefold()\n            if normalized_assignee:\n                assignee_filter = normalized_assignee\n\n        selected = [\n            task\n            for task in self._tasks\n            if (status is None or task.status == status)\n            and (\n                assignee_filter is None\n                or (\n                    task.assignee is not None\n                    and task.assignee.casefold() == assignee_filter\n                )\n            )\n        ]\n        selected.sort(key=lambda task: (-task.priority, task.created_at))\n        if limit is not None:\n            selected = selected[:limit]\n        return selected\n```\n### TaskBoardService.__init__\n- 来源：`src/taskboard/service.py` L21-L22\n- 符号：def __init__(self, tasks: Iterable[Task]=())\n- 选中原因：matches the task description（检索得分 1.442114）\n\n```python\ndef __init__(self, tasks: Iterable[Task] = ()) -> None:\n        self._tasks: list[Task] = list(tasks)\n```\n### TaskBoardService\n- 来源：`src/taskboard/service.py` L18-L102\n- 符号：class TaskBoardService\n- 选中原因：matches the task description（检索得分 1.271489）\n\n```python\nclass TaskBoardService:\n    \"\"\"In-memory task board with filtering and ordering rules.\"\"\"\n\n    def __init__(self, tasks: Iterable[Task] = ()) -> None:\n        self._tasks: list[Task] = list(tasks)\n\n    def add_task(self, task: Task) -> Task:\n        \"\"\"Register a task and return it.\"\"\"\n\n        if any(existing.id == task.id for existing in self._tasks):\n            raise ValueError(f\"duplicate task id: {task.id!r}\")\n        self._tasks.append(task)\n        return task\n\n    def get_task(self, task_id: str) -> Task:\n        \"\"\"Return one task by id.\"\"\"\n\n        for task in self._tasks:\n            if task.id == task_id:\n                return task\n        raise KeyError(task_id)\n\n    def complete_task(self, task_id: str) -> Task:\n        \"\"\"Mark a task as done and return the updated task.\"\"\"\n\n        task = self.get_task(task_id)\n        updated = Task(\n            id=task.id,\n            title=task.title,\n            assignee=task.assignee,\n            status=\"done\",\n            priority=task.priority,\n            created_at=task.created_at,\n        )\n        self._tasks[self._tasks.index(task)] = updated\n        return updated\n\n    def list_tasks(\n        self,\n        *,\n        status: str | None = None,\n        assignee: str | None = None,\n        limit: int | None = None,\n    ) -> list[Task]:\n        \"\"\"Return tasks ordered by priority (desc) then creation time (asc).\n\n        ``status`` restricts the result to one task status (SPEC-CORE-002).\n        ``assignee`` restricts the result by owner, ignoring case and trimming\n        surrounding whitespace; a blank value does not apply an owner filter\n        (SPEC-FILTER-001, SPEC-FILTER-002). ``limit`` caps the number of\n        returned tasks after filtering and sorting (SPEC-CORE-003).\n        \"\"\"\n\n        if status is not None and status not in TASK_STATUSES:\n            raise ValueError(f\"unsupported task status: {status!r}\")\n        if limit is not None and (\n            not isinstance(limit, int) or isinstance(limit, bool) or limit < 1\n        ):\n            raise ValueError(f\"limit must be a positive integer, got {limit!r}\")\n\n        assignee_filter: str | None = None\n        if assignee is not None:\n            normalized_assignee = assignee.strip().casefold()\n            if normalized_assignee:\n                assignee_filter = normalized_assignee\n\n        selected = [\n            task\n            for task in self._tasks\n            if (status is None or task.status == status)\n            and (\n                assignee_filter is None\n                or (\n                    task.assignee is not None\n                    and task.assignee.casefold() == assignee_filter\n                )\n            )\n        ]\n        selected.sort(key=lambda task: (-task.priority, task.created_at))\n        if limit is not None:\n            selected = selected[:limit]\n        return selected\n\n    def __len__(self) -> int:\n        return len(self._tasks)\n```\n### TaskBoardService.complete_task\n- 来源：`src/taskboard/service.py` L40-L53\n- 符号：def complete_task(self, task_id: str)\n- 选中原因：matches the task description（检索得分 0.683478）\n\n```python\ndef complete_task(self, task_id: str) -> Task:\n        \"\"\"Mark a task as done and return the updated task.\"\"\"\n\n        task = self.get_task(task_id)\n        updated = Task(\n            id=task.id,\n            title=task.title,\n            assignee=task.assignee,\n            status=\"done\",\n            priority=task.priority,\n            created_at=task.created_at,\n        )\n        self._tasks[self._tasks.index(task)] = updated\n        return updated\n```\n### Task\n- 来源：`src/taskboard/model.py` L12-L26\n- 符号：class Task\n- 选中原因：matches the task description（检索得分 0.652822）\n\n```python\nclass Task:\n    \"\"\"One task card on the board.\"\"\"\n\n    id: str\n    title: str\n    assignee: str | None\n    status: str\n    priority: int\n    created_at: str\n\n    def __post_init__(self) -> None:\n        if self.status not in TASK_STATUSES:\n            raise ValueError(f\"unsupported task status: {self.status!r}\")\n        if not self.id.strip():\n            raise ValueError(\"task id must not be empty\")\n```\n### build_demo_service\n- 来源：`src/taskboard/cli.py` L12-L19\n- 符号：def build_demo_service()\n- 选中原因：matches the task description（检索得分 0.620301）\n\n```python\ndef build_demo_service() -> TaskBoardService:\n    \"\"\"Return a small board used by the demo command.\"\"\"\n\n    service = TaskBoardService()\n    service.add_task(Task(id=\"T-1\", title=\"write spec\", assignee=\"Alice\", status=\"todo\", priority=3, created_at=\"2026-03-01\"))\n    service.add_task(Task(id=\"T-2\", title=\"fix parser\", assignee=\"bob\", status=\"done\", priority=5, created_at=\"2026-03-02\"))\n    service.add_task(Task(id=\"T-3\", title=\"review docs\", assignee=None, status=\"todo\", priority=3, created_at=\"2026-03-03\"))\n    return service\n```\n### main\n- 来源：`src/taskboard/cli.py` L22-L39\n- 符号：def main()\n- 选中原因：matches the task description（检索得分 0.562369）\n\n```python\ndef main() -> int:\n    parser = argparse.ArgumentParser(description=\"task board demo\")\n    parser.add_argument(\"--status\", default=None)\n    parser.add_argument(\"--assignee\", default=None)\n    parser.add_argument(\"--limit\", type=int, default=None)\n    args = parser.parse_args()\n\n    service = build_demo_service()\n    filters: dict[str, object] = {}\n    if args.status is not None:\n        filters[\"status\"] = args.status\n    if args.assignee is not None:\n        filters[\"assignee\"] = args.assignee\n    if args.limit is not None:\n        filters[\"limit\"] = args.limit\n    tasks = service.list_tasks(**filters)\n    print(json.dumps([task.__dict__ for task in tasks], ensure_ascii=False, indent=2))\n    return 0\n```\n### Task.__post_init__\n- 来源：`src/taskboard/model.py` L22-L26\n- 符号：def __post_init__(self)\n- 选中原因：matches the task description（检索得分 0.548835）\n\n```python\ndef __post_init__(self) -> None:\n        if self.status not in TASK_STATUSES:\n            raise ValueError(f\"unsupported task status: {self.status!r}\")\n        if not self.id.strip():\n            raise ValueError(\"task id must not be empty\")\n```\n\n## 4. 用于验证的测试\n\n### test_assignee_combines_with_status_filter\n- 来源：`tests/test_assignee_filter.py`\n- 选中原因：verifies the selected code symbol（检索得分 1.5）\n\n```python\ndef test_assignee_combines_with_status_filter(service: TaskBoardService) -> None:\n    tasks = service.list_tasks(status=\"todo\", assignee=\"alice\")\n    assert [task.id for task in tasks] == [\"T-4\", \"T-1\"]\n```\n### test_blank_assignee_is_treated_as_no_filter\n- 来源：`tests/test_assignee_filter.py`\n- 选中原因：verifies the selected code symbol（检索得分 1.5）\n\n```python\ndef test_blank_assignee_is_treated_as_no_filter(service: TaskBoardService, blank: str) -> None:\n    assert [task.id for task in service.list_tasks(assignee=blank)] == [\n        task.id for task in service.list_tasks()\n    ]\n```\n### test_filter_by_assignee_is_case_insensitive\n- 来源：`tests/test_assignee_filter.py`\n- 选中原因：verifies the selected code symbol（检索得分 1.5）\n\n```python\ndef test_filter_by_assignee_is_case_insensitive(service: TaskBoardService) -> None:\n    # SPEC-FILTER-001 compares case-insensitively, so \"Alice\" (T-1) and \"alice\" (T-4) both match.\n    assert [task.id for task in service.list_tasks(assignee=\"ALICE\")] == [\"T-4\", \"T-1\"]\n    assert [task.id for task in service.list_tasks(assignee=\"alice\")] == [\"T-4\", \"T-1\"]\n```\n### test_filter_by_assignee_trims_surrounding_whitespace\n- 来源：`tests/test_assignee_filter.py`\n- 选中原因：verifies the selected code symbol（检索得分 1.5）\n\n```python\ndef test_filter_by_assignee_trims_surrounding_whitespace(service: TaskBoardService) -> None:\n    assert [task.id for task in service.list_tasks(assignee=\"  bob  \")] == [\"T-2\"]\n```\n### test_complete_task_marks_task_done\n- 来源：`tests/test_taskboard.py`\n- 选中原因：verifies the selected code symbol（检索得分 1.5）\n\n```python\ndef test_complete_task_marks_task_done() -> None:\n    service = make_service()\n    updated = service.complete_task(\"T-1\")\n    assert updated.status == \"done\"\n    assert service.get_task(\"T-1\").status == \"done\"\n```\n### test_duplicate_task_id_is_rejected\n- 来源：`tests/test_taskboard.py`\n- 选中原因：verifies the selected code symbol（检索得分 1.5）\n\n```python\ndef test_duplicate_task_id_is_rejected() -> None:\n    service = make_service()\n    with pytest.raises(ValueError):\n        service.add_task(Task(id=\"T-1\", title=\"dup\", assignee=\"x\", status=\"todo\", priority=1, created_at=\"2026-02-01\"))\n```\n### test_status_filter_returns_only_matching_status\n- 来源：`tests/test_taskboard.py`\n- 选中原因：verifies the selected code symbol（检索得分 1.5）\n\n```python\ndef test_status_filter_returns_only_matching_status() -> None:\n    tasks = make_service().list_tasks(status=\"todo\")\n    assert [task.id for task in tasks] == [\"T-3\", \"T-1\"]\n```\n### test_unknown_status_raises_value_error\n- 来源：`tests/test_taskboard.py`\n- 选中原因：verifies the selected code symbol（检索得分 1.5）\n\n```python\ndef test_unknown_status_raises_value_error() -> None:\n    with pytest.raises(ValueError):\n        make_service().list_tasks(status=\"archived\")\n```\n\n## 4.1 需要修改的文件的完整内容\n\n修改时请保持以上文件中的其余内容不变，只实现规格要求的行为。\n\n### src/taskboard/cli.py\n\n```python\n\"\"\"Command line demo for the task board service.\"\"\"\n\nfrom __future__ import annotations\n\nimport argparse\nimport json\n\nfrom taskboard.model import Task\nfrom taskboard.service import TaskBoardService\n\n\ndef build_demo_service() -> TaskBoardService:\n    \"\"\"Return a small board used by the demo command.\"\"\"\n\n    service = TaskBoardService()\n    service.add_task(Task(id=\"T-1\", title=\"write spec\", assignee=\"Alice\", status=\"todo\", priority=3, created_at=\"2026-03-01\"))\n    service.add_task(Task(id=\"T-2\", title=\"fix parser\", assignee=\"bob\", status=\"done\", priority=5, created_at=\"2026-03-02\"))\n    service.add_task(Task(id=\"T-3\", title=\"review docs\", assignee=None, status=\"todo\", priority=3, created_at=\"2026-03-03\"))\n    return service\n\n\ndef main() -> int:\n    parser = argparse.ArgumentParser(description=\"task board demo\")\n    parser.add_argument(\"--status\", default=None)\n    parser.add_argument(\"--assignee\", default=None)\n    parser.add_argument(\"--limit\", type=int, default=None)\n    args = parser.parse_args()\n\n    service = build_demo_service()\n    filters: dict[str, object] = {}\n    if args.status is not None:\n        filters[\"status\"] = args.status\n    if args.assignee is not None:\n        filters[\"assignee\"] = args.assignee\n    if args.limit is not None:\n        filters[\"limit\"] = args.limit\n    tasks = service.list_tasks(**filters)\n    print(json.dumps([task.__dict__ for task in tasks], ensure_ascii=False, indent=2))\n    return 0\n\n\nif __name__ == \"__main__\":\n    raise SystemExit(main())\n```\n\n### src/taskboard/model.py\n\n```python\n\"\"\"Task board domain model.\"\"\"\n\nfrom __future__ import annotations\n\nfrom dataclasses import dataclass\nfrom typing import Final\n\nTASK_STATUSES: Final[tuple[str, ...]] = (\"todo\", \"done\")\n\n\n@dataclass(frozen=True)\nclass Task:\n    \"\"\"One task card on the board.\"\"\"\n\n    id: str\n    title: str\n    assignee: str | None\n    status: str\n    priority: int\n    created_at: str\n\n    def __post_init__(self) -> None:\n        if self.status not in TASK_STATUSES:\n            raise ValueError(f\"unsupported task status: {self.status!r}\")\n        if not self.id.strip():\n            raise ValueError(\"task id must not be empty\")\n```\n\n### src/taskboard/service.py\n\n```python\n\"\"\"Task board service.\n\nThe behaviour of this module is driven by the specification entries under\n``spec/``:\n\n- ``SPEC-CORE-001`` default ordering of :meth:`TaskBoardService.list_tasks`\n- ``SPEC-CORE-002`` status filtering\n- ``SPEC-CORE-003`` result count limit\n\"\"\"\n\nfrom __future__ import annotations\n\nfrom collections.abc import Iterable\n\nfrom taskboard.model import TASK_STATUSES, Task\n\n\nclass TaskBoardService:\n    \"\"\"In-memory task board with filtering and ordering rules.\"\"\"\n\n    def __init__(self, tasks: Iterable[Task] = ()) -> None:\n        self._tasks: list[Task] = list(tasks)\n\n    def add_task(self, task: Task) -> Task:\n        \"\"\"Register a task and return it.\"\"\"\n\n        if any(existing.id == task.id for existing in self._tasks):\n            raise ValueError(f\"duplicate task id: {task.id!r}\")\n        self._tasks.append(task)\n        return task\n\n    def get_task(self, task_id: str) -> Task:\n        \"\"\"Return one task by id.\"\"\"\n\n        for task in self._tasks:\n            if task.id == task_id:\n                return task\n        raise KeyError(task_id)\n\n    def complete_task(self, task_id: str) -> Task:\n        \"\"\"Mark a task as done and return the updated task.\"\"\"\n\n        task = self.get_task(task_id)\n        updated = Task(\n            id=task.id,\n            title=task.title,\n            assignee=task.assignee,\n            status=\"done\",\n            priority=task.priority,\n            created_at=task.created_at,\n        )\n        self._tasks[self._tasks.index(task)] = updated\n        return updated\n\n    def list_tasks(\n        self,\n        *,\n        status: str | None = None,\n        assignee: str | None = None,\n        limit: int | None = None,\n    ) -> list[Task]:\n        \"\"\"Return tasks ordered by priority (desc) then creation time (asc).\n\n        ``status`` restricts the result to one task status (SPEC-CORE-002).\n        ``assignee`` restricts the result by owner, ignoring case and trimming\n        surrounding whitespace; a blank value does not apply an owner filter\n        (SPEC-FILTER-001, SPEC-FILTER-002). ``limit`` caps the number of\n        returned tasks after filtering and sorting (SPEC-CORE-003).\n        \"\"\"\n\n        if status is not None and status not in TASK_STATUSES:\n            raise ValueError(f\"unsupported task status: {status!r}\")\n        if limit is not None and (\n            not isinstance(limit, int) or isinstance(limit, bool) or limit < 1\n        ):\n            raise ValueError(f\"limit must be a positive integer, got {limit!r}\")\n\n        assignee_filter: str | None = None\n        if assignee is not None:\n            normalized_assignee = assignee.strip().casefold()\n            if normalized_assignee:\n                assignee_filter = normalized_assignee\n\n        selected = [\n            task\n            for task in self._tasks\n            if (status is None or task.status == status)\n            and (\n                assignee_filter is None\n                or (\n                    task.assignee is not None\n                    and task.assignee.casefold() == assignee_filter\n                )\n            )\n        ]\n        selected.sort(key=lambda task: (-task.priority, task.created_at))\n        if limit is not None:\n            selected = selected[:limit]\n        return selected\n\n    def __len__(self) -> int:\n        return len(self._tasks)\n```\n\n\n## 5. 任务状态\n\n- 已完成事项：导入规格、代码与测试资料到 seekdb 语料库；检索并组装开发上下文（规格 / 代码 / 测试）；由 MiniMax 生成代码修改并写入工作区；运行目标测试与回归测试\n- 待办事项：（无）\n- 已有验证结果：修改前目标测试：1；修改后目标测试与回归测试：0\n\n## 6. 来源清单\n\n- [spec] `spec/SPEC-FILTER-003.md` — 负责人过滤与其它过滤条件组合（SPEC-FILTER-003）\n- [spec] `spec/SPEC-FILTER-002.md` — 空白负责人输入的边界行为（SPEC-FILTER-002）\n- [spec] `spec/SPEC-CORE-001.md` — 任务列表默认排序（SPEC-CORE-001）\n- [spec] `spec/SPEC-FILTER-001.md` — 按负责人过滤（SPEC-FILTER-001）\n- [spec] `spec/SPEC-CORE-002.md` — 任务状态过滤（SPEC-CORE-002）\n\n\n（上下文超出字节预算，已截断）"
+}

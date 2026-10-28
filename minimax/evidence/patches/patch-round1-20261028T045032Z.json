@@ -1,0 +1,28 @@
+{
+  "generated_at": "20261028T045032Z",
+  "task": "为任务列表增加按负责人过滤能力，并保持既有排序与状态过滤行为不变",
+  "applied": true,
+  "minimax": {
+    "model": "MiniMax-M3.1-Flash",
+    "protocol": "anthropic",
+    "base_url": "https://agent.minimax.cn/mavis/api/v1/llm/v1",
+    "usage": {
+      "input_tokens": 6558,
+      "output_tokens": 5844,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens_details": {
+        "thinking_tokens": 5087
+      }
+    },
+    "elapsed_ms": 46404.39310000511,
+    "transcript_path": "D:/beiligonggggggg/year2/study/oceanbase/powercontext/minimax/evidence/minimax/call-20261028T045032Z.json"
+  },
+  "files": [
+    {
+      "path": "src/taskboard/service.py",
+      "created": false,
+      "diff": "--- a/src/taskboard/service.py\n+++ b/src/taskboard/service.py\n@@ -52,19 +52,47 @@\n         self._tasks[self._tasks.index(task)] = updated\n         return updated\n \n-    def list_tasks(self, *, status: str | None = None, limit: int | None = None) -> list[Task]:\n+    def list_tasks(\n+        self,\n+        *,\n+        status: str | None = None,\n+        assignee: str | None = None,\n+        limit: int | None = None,\n+    ) -> list[Task]:\n         \"\"\"Return tasks ordered by priority (desc) then creation time (asc).\n \n-        ``status`` restricts the result to one task status (SPEC-CORE-002) and\n-        ``limit`` caps the number of returned tasks (SPEC-CORE-003).\n+        ``status`` restricts the result to one task status (SPEC-CORE-002).\n+        ``assignee`` restricts the result by owner, ignoring case and trimming\n+        surrounding whitespace; a blank value does not apply an owner filter\n+        (SPEC-FILTER-001, SPEC-FILTER-002). ``limit`` caps the number of\n+        returned tasks after filtering and sorting (SPEC-CORE-003).\n         \"\"\"\n \n         if status is not None and status not in TASK_STATUSES:\n             raise ValueError(f\"unsupported task status: {status!r}\")\n-        if limit is not None and limit < 1:\n+        if limit is not None and (\n+            not isinstance(limit, int) or isinstance(limit, bool) or limit < 1\n+        ):\n             raise ValueError(f\"limit must be a positive integer, got {limit!r}\")\n \n-        selected = [task for task in self._tasks if status is None or task.status == status]\n+        assignee_filter: str | None = None\n+        if assignee is not None:\n+            normalized_assignee = assignee.strip().casefold()\n+            if normalized_assignee:\n+                assignee_filter = normalized_assignee\n+\n+        selected = [\n+            task\n+            for task in self._tasks\n+            if (status is None or task.status == status)\n+            and (\n+                assignee_filter is None\n+                or (\n+                    task.assignee is not None\n+                    and task.assignee.casefold() == assignee_filter\n+                )\n+            )\n+        ]\n         selected.sort(key=lambda task: (-task.priority, task.created_at))\n         if limit is not None:\n             selected = selected[:limit]\n"
+    }
+  ]
+}
